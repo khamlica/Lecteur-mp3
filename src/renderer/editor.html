@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:">
+  <title>Modifier le morceau</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+  <svg class="sprite" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  </svg>
+
+  <div id="panel">
+    <header>
+      <span>Modifier le morceau</span>
+      <button class="btn small" id="close" title="Fermer (Échap)"><svg><use href="#i-close"/></svg></button>
+    </header>
+
+    <button id="art" title="Changer la pochette">
+      <img id="art-img" alt="" hidden>
+      <span class="hint">Cliquer, coller ou déposer une image</span>
+    </button>
+    <input type="file" id="art-file" accept="image/*" hidden>
+
+    <label class="field">Titre
+      <input id="title-input" type="text" spellcheck="false" autocomplete="off">
+    </label>
+    <label class="field">Artiste
+      <input id="artist-input" type="text" spellcheck="false" autocomplete="off">
+    </label>
+    <div id="file-name"></div>
+
+    <footer>
+      <div id="status"></div>
+      <button class="action" id="cancel">Annuler</button>
+      <button class="action primary" id="save">Enregistrer</button>
+    </footer>
+  </div>
+
+  <script src="cover.js"></script>
+  <script src="editor.js"></script>
+</body>
+</html>

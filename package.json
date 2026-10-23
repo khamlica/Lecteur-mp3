@@ -1,0 +1,47 @@
+{
+  "name": "lecteur-mp3",
+  "productName": "Lecteur MP3",
+  "version": "1.0.0",
+  "description": "Mini lecteur MP3 transparent pour Windows",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "author": "Aymane Khamlichi",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "music-metadata": "^12.2.3"
+  },
+  "build": {
+    "appId": "com.khamlichi.lecteurmp3",
+    "productName": "Lecteur MP3",
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createStartMenuShortcut": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Lecteur MP3"
+    }
+  },
+  "allowScripts": {
+    "ffmpeg-static@5.3.0": true
+  }
+}

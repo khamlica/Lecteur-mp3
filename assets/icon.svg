@@ -28,6 +28,10 @@
       <feMerge result="all"><feMergeNode in="mass"/><feMergeNode in="rimSoft"/></feMerge>
       <feComposite in="all" in2="SourceGraphic" operator="in"/>
     </filter>
+    <radialGradient id="flash" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
     <filter id="chalk" x="-10%" y="-10%" width="120%" height="120%">
       <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="3"/>
       <feDisplacementMap in="SourceGraphic" scale="7"/>
@@ -35,9 +39,6 @@
     <filter id="chalk-fine" x="-30%" y="-30%" width="160%" height="160%">
       <feTurbulence type="fractalNoise" baseFrequency="0.12" numOctaves="2" seed="5"/>
       <feDisplacementMap in="SourceGraphic" scale="4"/>
-    </filter>
-    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="14"/>
     </filter>
   </defs>
 
@@ -55,17 +56,10 @@
     <circle cx="80" cy="440" r="2" opacity="0.45"/>
   </g>
 
-  <!-- note centrée dans l'icône -->
-  <g id="note" transform="translate(18 -34)">
-    <g opacity="0.45" filter="url(#glow)">
-      <ellipse cx="189" cy="389" rx="40" ry="23" transform="rotate(-30 189 389)" fill="#cfe0ff" opacity="0.55"/>
-      <path d="M221 377.7L228 339.2C238 284.6 262 221.6 304 172.6" fill="none" stroke="#cfe0ff" stroke-width="13" stroke-linecap="round"/>
-      <path d="M304 172.6L320 263.2" fill="none" stroke="#cfe0ff" stroke-width="13" stroke-linecap="round"/>
-    </g>
-    <g fill="#fff" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalk)">
-      <path d="M221 377.7L228 339.2C238 284.6 262 221.6 304 172.6" fill="none" stroke-width="10"/>
-      <ellipse cx="189" cy="389" rx="38" ry="21.5" transform="rotate(-30 189 389)" stroke="none"/>
-      <path d="M304 172.6L320 263.2" fill="none" stroke-width="10"/>
-    </g>
+  <!-- feu d'artifice au centre -->
+  <circle cx="256" cy="256" r="175" fill="url(#flash)"/>
+  <g fill="#fff" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalk)">
+    <path d="M291.2 263.4L404.2 287.2M428.7 292.3L445.6 295.9M310 289.7L364.8 323.8M387.2 337.8L397.7 344.4M280.6 284.6L359.2 376.3M378.2 398.4L389 411.1M275.1 305.2L304.6 381.1M254.6 303.2L251.3 418.5M239 302.6L212 376.3M219.3 296.7L150.2 373.4M220.9 277.2L145.3 322.9M124.1 335.7L112.3 342.8M200.5 264.4L90.7 281.2M55.8 286.5L46.1 287.9M206.9 247.7L135 235.6M96.5 229.1L85 227.2M224.3 237.2L124.2 178M229.6 224.1L178 161.6M237 198.4L203.6 96.9M257.2 219.9L260.3 124.1M260.9 106.2L261.3 94.3M268.9 216.5L302.6 113M286.8 217.6L338.5 153.3M311.7 224.9L391.4 180.5M304.1 246.5L379.7 231.5" stroke-width="6" opacity="0.95"/>
+    <path d="M230.7 207.9C275.3 261.1 272.5 263.2 310.7 225.4C251.7 270.3 251.4 272.6 278.7 314.6C237.8 252.2 239.7 247.8 201.4 286.2C261.1 243.3 260.5 236.9 230.7 207.9Z" stroke-width="4" opacity="1"/>
   </g>
 </svg>

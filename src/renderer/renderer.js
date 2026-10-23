@@ -218,11 +218,14 @@ function renderFx() {
   ui.fx.title = details.length ? `Effets (${details.join(' ; ')})` : 'Effets';
 }
 
-async function chooseFolder() {
-  const result = await api.chooseFolder();
+// `kind` : 'folder' ou 'track' ; sans, un petit menu sous la souris demande lequel (voir choose-folder).
+// Une piste choisie : on lit son dossier en commençant par elle.
+async function chooseFolder(kind) {
+  const result = await api.chooseFolder(kind);
   if (!result) return;
   folder = result.folder;
-  setTracks(result.tracks);
+  if (result.file) setTracks(result.tracks, result.file, 0, true);
+  else setTracks(result.tracks);
 }
 
 function savePosition() {
@@ -416,7 +419,7 @@ $('next').addEventListener('click', () => next());
 $('prev').addEventListener('click', prev);
 ui.shuffle.addEventListener('click', toggleShuffle);
 ui.repeat.addEventListener('click', cycleRepeat);
-$('folder').addEventListener('click', chooseFolder);
+$('folder').addEventListener('click', () => chooseFolder());
 ui.fx.addEventListener('click', () => api.showEffectsMenu());
 ui.coverImg.addEventListener('load', () => api.reportPlayback({ fxColor: ambiance.setColor(ui.coverImg) }));
 $('cover').addEventListener('click', () => {
@@ -519,11 +522,12 @@ api.onCommand((cmd, arg) => {
     case 'pause': audio.pause(); break;
     case 'next': next(); break;
     case 'prev': prev(); break;
-    case 'choose-folder': chooseFolder(); break;
+    case 'choose-folder': chooseFolder('folder'); break;
     case 'youtube': openYoutube(); break;
     case 'yt-progress': showYoutubeProgress(arg); break;
     case 'save-tags': saveTags(arg.file, arg.changes).then((result) => api.tagsSaved(arg.id, result)); break;
     case 'effects': setEffects(arg); break;
+    case 'transparent': document.body.classList.toggle('opaque', !arg); break;
     case 'sound': setSoundEffect(arg); break;
     case 'flush': savePosition(); break;
   }
@@ -542,6 +546,7 @@ navigator.mediaDevices.addEventListener('devicechange', reportAudioDevice);
 (async () => {
   const { settings, tracks: list, sound: soundEffect, effects } = await api.getInitialState();
   folder = settings.folder;
+  document.body.classList.toggle('opaque', settings.transparent === false);
   shuffle = settings.shuffle;
   repeat = settings.repeat;
   audio.volume = settings.volume;

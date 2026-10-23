@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   getInitialState: () => ipcRenderer.invoke('get-initial-state'),
-  chooseFolder: () => ipcRenderer.invoke('choose-folder'),
+  chooseFolder: (kind) => ipcRenderer.invoke('choose-folder', kind),
   getMetadata: (file) => ipcRenderer.invoke('get-metadata', file),
   readAudio: (file) => ipcRenderer.invoke('read-audio', file),
   reportFx: (report) => ipcRenderer.send('fx-report', report),

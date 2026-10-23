@@ -20,6 +20,7 @@ const DEFAULTS = {
   shuffle: false,
   repeat: 'off', // 'off' | 'all' | 'one'
   alwaysOnTop: true,
+  transparent: true,       // fond de verre (acrylic Windows) et fondu au repos ; false : opaque, fond sombre plein
   bounds: null,
   fxPulse: true,           // le lecteur pulse sur les basses
   fxPressure: true,        // lumière qui monte du bas sur les basses longues et lourdes
@@ -759,7 +760,7 @@ function createWindow() {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: settings.alwaysOnTop,
-    backgroundMaterial: 'acrylic',
+    backgroundMaterial: settings.transparent ? 'acrylic' : 'none',
     backgroundColor: '#00000000',
     show: false,
     icon: ICON_PATH,
@@ -800,7 +801,8 @@ function createWindow() {
   startHoverWatcher();
 }
 
-// Fondu discret : opacité réduite quand la souris n'est pas sur le lecteur.
+// Fondu discret : opacité réduite quand la souris n'est pas sur le lecteur (réglage « Transparence » ;
+// sans lui, le lecteur reste pleinement opaque).
 // (On interroge la position du curseur car les zones "drag" ne reçoivent pas les événements souris.)
 function startHoverWatcher() {
   setInterval(() => {
@@ -808,7 +810,7 @@ function startHoverWatcher() {
     const p = screen.getCursorScreenPoint();
     const b = win.getBounds();
     const inside = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
-    const target = inside ? 1 : IDLE_OPACITY;
+    const target = inside || !settings.transparent ? 1 : IDLE_OPACITY;
     const current = win.getOpacity();
     if (Math.abs(current - target) < 0.01) return;
     const step = 0.1 * Math.sign(target - current);
@@ -829,6 +831,20 @@ function toggleWindow() {
 function setAlwaysOnTop(flag) {
   settings.alwaysOnTop = flag;
   win.setAlwaysOnTop(flag);
+  saveSettings();
+  updateTray();
+}
+
+// Transparence du lecteur, au choix (menu) : fond de verre (acrylic Windows) et fondu quand la souris n'est
+// pas dessus, ou fond sombre plein et pleinement opaque en permanence
+function setTransparent(flag) {
+  settings.transparent = flag;
+  send('transparent', flag); // le fond plein ne dépend que de la page : il s'applique quoi qu'il arrive
+  try {
+    win.setBackgroundMaterial(flag ? 'acrylic' : 'none');
+  } catch (err) {
+    console.warn('Changement du fond de verre impossible :', err.message);
+  }
   saveSettings();
   updateTray();
 }
@@ -886,7 +902,7 @@ function setEffects(partial) {
 // ---------- Fenêtre « Personnaliser les effets » ----------
 
 const FX_PANEL_WIDTH = 360;
-const FX_PANEL_HEIGHT = 610;
+const FX_PANEL_HEIGHT = 710; // descriptions des effets sur deux lignes, boutons du bas compris
 let fxPanel = null;
 
 function openFxPanel() {
@@ -1039,6 +1055,12 @@ function updateTray() {
       checked: settings.alwaysOnTop,
       click: (item) => setAlwaysOnTop(item.checked),
     },
+    {
+      label: 'Transparence',
+      type: 'checkbox',
+      checked: settings.transparent,
+      click: (item) => setTransparent(item.checked),
+    },
     { label: 'Effets', submenu: effectsMenu() },
     { label: 'Changer de dossier…', click: () => { showWindow(); send('choose-folder'); } },
     { label: 'Télécharger depuis YouTube…', click: () => { showWindow(); send('youtube'); } },
@@ -1058,18 +1080,38 @@ ipcMain.handle('get-initial-state', async () => {
   return { settings, tracks, sound: soundEffect(), effects: fxConfig() };
 });
 
-ipcMain.handle('choose-folder', async () => {
-  const result = await dialog.showOpenDialog(win, {
-    title: 'Choisir le dossier de musique',
-    defaultPath: settings.folder || app.getPath('music'),
-    properties: ['openDirectory'],
+// Choix de la musique : `kind` 'folder' (un dossier entier), 'track' (une piste : on lit son dossier en
+// commençant par elle), ou rien pour le demander dans un petit menu sous la souris (bouton dossier).
+// Windows ne sait pas proposer pistes et dossiers dans une même fenêtre de choix.
+// → { folder, tracks, file } (file : la piste choisie, ou null), ou null si annulé.
+ipcMain.handle('choose-folder', async (_e, kind) => {
+  if (!kind) kind = await new Promise((resolve) => {
+    let chosen = null;
+    Menu.buildFromTemplate([
+      { label: 'Choisir une piste…', click: () => { chosen = 'track'; } },
+      { label: 'Choisir un dossier…', click: () => { chosen = 'folder'; } },
+    ]).popup({ window: win, callback: () => setTimeout(() => resolve(chosen), 50) }); // le clic peut suivre la fermeture
   });
+  if (!kind) return null;
+  const result = await dialog.showOpenDialog(win, kind === 'track'
+    ? {
+        title: 'Choisir une piste',
+        defaultPath: settings.folder || app.getPath('music'),
+        properties: ['openFile'],
+        filters: [{ name: 'Pistes audio', extensions: ['mp3', 'opus', 'm4a'] }],
+      }
+    : {
+        title: 'Choisir le dossier de musique',
+        defaultPath: settings.folder || app.getPath('music'),
+        properties: ['openDirectory'],
+      });
   if (result.canceled || !result.filePaths[0]) return null;
-  settings.folder = result.filePaths[0];
-  settings.lastTrack = null;
+  const file = kind === 'track' ? result.filePaths[0] : null;
+  settings.folder = file ? path.dirname(file) : result.filePaths[0];
+  settings.lastTrack = file;
   settings.position = 0;
   saveSettings();
-  return { folder: settings.folder, tracks: await scanFolder(settings.folder) };
+  return { folder: settings.folder, tracks: await scanFolder(settings.folder), file };
 });
 
 ipcMain.handle('get-metadata', (_e, file) => readMetadata(file));

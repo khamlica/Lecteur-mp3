@@ -162,6 +162,7 @@ h2 {
   align-items: center;
   gap: 8px;
   min-height: 30px;
+  padding: 2px 0;
 }
 
 .effect label {
@@ -175,13 +176,14 @@ h2 {
 
 .effect label span {
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
+/* la description passe sous le nom de l'effet, sur deux lignes au besoin, au lieu d'être coupée */
 .effect small {
+  display: block;
+  margin-top: 1px;
   font-size: 10.5px;
+  line-height: 1.3;
   color: var(--fg-faint);
 }
 

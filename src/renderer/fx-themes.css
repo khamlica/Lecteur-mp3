@@ -5,6 +5,7 @@
      chaque coup               la pochette « saute », sans lumière ;
      la voix                   un halo à droite quand la mélodie monte, à gauche quand elle descend ;
      le motif signature        la pochette s'éclaire d'elle-même (seuls ses coups l'éclairent) ;
+     les coups les plus forts  tout le lecteur pulse, dans la couleur de la pochette ;
      la mélodie de fond        le haut et le bas du lecteur, d'une lueur douce (pistes séparées) ;
      un passage aigu           une lumière claire qui descend du haut du lecteur ;
      un passage rêveur         le halo d'ambiance qui respire dans les tons chauds, des étincelles
@@ -14,6 +15,7 @@
    Variables posées sur l'élément .fx-surface :
      --fx-pulse     coup de basse, de 0 à 1 (accent 1, ordinaire 0,8, léger 0,6)
      --fx-perc-hit  coup de percussion (caisse claire, clap…), de 0 à 1
+     --fx-accent-hit  un des coups les plus forts du morceau, de 0 à 1 (tout le lecteur pulse)
      --fx-pulse-glow (1 à 0,6) : lueurs réduites au-delà de 5 coups/s (photosensibilité)
      --fx-pressure  basse longue et lourde, de 0 à 1 (le contour)
      --fx-glow      halo : énergie du passage, de 0 à 1
@@ -31,6 +33,7 @@
   --fx-pulse: 0;
   --fx-pulse-glow: 1;
   --fx-perc-hit: 0;
+  --fx-accent-hit: 0;
   --fx-cover-edge: 76px; /* bord droit de la pochette : le halo des notes graves sort juste à côté */
   --fx-pressure: 0;
   --fx-glow: 0;
@@ -166,6 +169,24 @@
   0%, 100% { opacity: 0; transform: scale(0.6); }
   20% { opacity: 1; transform: scale(1); }
   45% { opacity: 0; transform: scale(1.15); }
+}
+
+/* Coups les plus forts du morceau : tout le lecteur pulse, une teinte et une lueur vers l'intérieur dans la
+   couleur de la pochette (élément .fx-flash dans la surface) */
+.fx-flash {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-app-region: initial;
+  --fx-flash-color: var(--fx-cover-color);
+  background: rgb(var(--fx-flash-color) / min(0.3, calc(var(--fx-accent-hit) * 0.3)));
+  box-shadow: inset 0 0 28px rgb(var(--fx-flash-color) / min(0.55, calc(var(--fx-accent-hit) * 0.55)));
+}
+
+.fx-surface[data-fx-theme="mono"] .fx-flash {
+  --fx-flash-color: 255 255 255;
+  opacity: 0.5;
 }
 
 /* Passage aigu (la mélodie monte nettement au-dessus de son habitude, un passage mémorable) : une lumière

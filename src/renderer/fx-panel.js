@@ -10,7 +10,7 @@ const EFFECT_KEYS = {
 const DEFAULTS = {
   fxPulse: true, fxPressure: true, fxHalo: true, fxNotes: true,
   fxPulseLevel: 1, fxPressureLevel: 1, fxHaloLevel: 1, fxNotesLevel: 1,
-  fxTheme: 'aurora', fxColorMode: 'theme', fxCustomColor: '#ff7a3d', fxSyncMs: 0,
+  fxTheme: 'glass', fxColorMode: 'theme', fxCustomColor: '#ff7a3d', fxSyncMs: 0,
 };
 
 let config = null;      // réglages en cours (même forme que pour le lecteur)
@@ -30,7 +30,6 @@ for (const [name, theme] of Object.entries(FX_THEMES)) {
       <div class="fx-palette"></div><div class="fx-bass"></div>
       <div class="fx-lift"></div><div class="fx-sparkles"></div>
       
-      <div class="fx-melody"></div>
       <div class="mini-cover fx-cover"></div>
       <div class="lines"><i></i><i></i></div>
     </div>
@@ -142,9 +141,6 @@ function demo(t) {
       ? (cycle % 2 < 0.25 ? 1 : 0.8) * Math.min(1, since / 0.03) * Math.exp(-since / 0.22) : 0,
     // motif signature (comme un clap sur les temps 2 et 4) : la pochette s'éclaire
     pulseHigh: rhythmic && cycle % (fast ? 0.5 : 1) >= (fast ? 0.25 : 0.5) ? 0.8 * Math.min(1, since / 0.02) * Math.exp(-since / 0.14) : 0,
-    // mélodie de fond : un riff de 4 notes par mesure, de l'aigu au grave
-    melody: cycle >= 2 && cycle < 7 ? Math.min(1, ((cycle - 2) % 0.5) / 0.04) * Math.exp(-((cycle - 2) % 0.5) / 0.3) : 0,
-    melodyTone: cycle >= 2 ? 1 - (Math.floor((cycle - 2) / 0.5) % 4) / 3 : 0.5,
     pressure: smoothstep(4.6, 5.2, cycle) * (1 - smoothstep(7.4, 8, cycle)) * (0.75 + 0.25 * Math.sin(t * 2 * Math.PI * 1.2)),
     // flashs par seconde comptés comme dans le lecteur (un coup aigu compte pour FX_HIGH_FLASH)
     pulseRate: (fast ? 2 : rhythmic ? 1 : 0) * (1 + FX_HIGH_FLASH),
@@ -164,7 +160,7 @@ function demo(t) {
 
 // N'animer que le thème choisi et celui qu'on survole (les autres montrent une image fixe) ;
 // quand on règle un effet, l'aperçu ne montre que lui.
-const STILL = { pulse: 0.5, pulseHigh: 0, voicePresence: 0.6, dreamy: 0, lift: 0, melody: 0.5, melodyTone: 0.6, pulseRate: 1.3, pressure: 0.6, glow: 0.5, noteLeft: 0.5, noteRight: 0, brightness: 0.5 };
+const STILL = { pulse: 0.5, pulseHigh: 0, voicePresence: 0.6, dreamy: 0, lift: 0, pulseRate: 1.3, pressure: 0.6, glow: 0.5, noteLeft: 0.5, noteRight: 0, brightness: 0.5 };
 
 // Mouvements réduits : comme dans le lecteur, les pulsations deviennent des fondus (voir createAmbiance)
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -184,8 +180,8 @@ function animate(ms) {
     if (reducedMotion.matches) {
       const f = (faded[name] ??= { pulse: 0, pulseHigh: 0 });
       v.pulse = f.pulse = follow(f.pulse, v.pulse, dt, 0.06, 0.2);
-      v.melody = f.melody = follow(f.melody || 0, v.melody, dt, 0.06, 0.2);
     }
+    v.rimAngle = (t * 20) % 360; // Verre liquide : le reflet fait lentement le tour du bord
     v.warm = fxWarmFrom(coverColor);
     v.coverColor = coverColor || FX_FALLBACK_COLOR;
     applyFx(el, name, fxBaseColor({ ...config, theme: name }, coverColor || FX_FALLBACK_COLOR), v, t);

@@ -59,7 +59,7 @@ body.opaque #bar {
   flex: none;
   width: 64px;
   height: 64px;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -80,6 +80,16 @@ body.opaque #bar {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* Un fin liseré clair : la pochette est posée sur le verre */
+#cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  pointer-events: none;
 }
 
 /* Un clic sur la pochette ouvre la fenêtre d'édition */
@@ -159,6 +169,32 @@ body.empty #cover .edit {
   text-overflow: ellipsis;
 }
 
+/* Texte trop long (classe long, voir fitText) : il s'efface en fondu sur le bord au lieu de « … », et défile
+   doucement au survol jusqu'à sa fin (--shift), puis revient */
+#title.long,
+#artist.long {
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+}
+
+#info:hover #title.long,
+#info:hover #artist.long {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  animation: text-scroll var(--scroll-time, 6s) ease-in-out 0.4s infinite alternate;
+}
+
+@keyframes text-scroll {
+  0%, 12% { text-indent: 0; }
+  88%, 100% { text-indent: var(--shift, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #info:hover #title.long,
+  #info:hover #artist.long {
+    animation: none;
+  }
+}
+
 #title {
   font-size: 13px;
   font-weight: 600;
@@ -187,29 +223,74 @@ body.yt #yt {
   display: block;
 }
 
-#yt-url {
+/* Un champ en pilule, l'icône de lien à gauche ; pendant le téléchargement, une fine barre de progression
+   court le long de son bas (--yt-pct ; sans pourcentage connu, un reflet qui passe en boucle) */
+.yt-field {
   -webkit-app-region: no-drag;
-  display: block;
-  width: 100%;
-  height: 17px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 21px;
+  padding: 0 10px 0 8px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  transition: box-shadow 0.15s, background 0.15s;
+}
+
+.yt-field:focus-within {
+  background: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.yt-field svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--fg-faint);
+}
+
+.yt-field::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: var(--yt-pct, 0%);
+  background: var(--accent);
+  transition: width 0.3s;
+}
+
+#yt.busy .yt-field::after {
+  width: var(--yt-pct, 30%);
+}
+
+#yt.busy.waiting .yt-field::after {
+  animation: yt-waiting 1.2s ease-in-out infinite;
+}
+
+@keyframes yt-waiting {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
+
+#yt-url {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   border: 0;
-  border-bottom: 1px solid var(--track);
   background: transparent;
   color: var(--fg);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  line-height: 17px;
   outline: none;
   user-select: text;
 }
 
-#yt-url:focus:not(:read-only) {
-  border-bottom-color: var(--accent);
-}
-
 #yt-url:read-only {
-  border-bottom-color: transparent;
   text-overflow: ellipsis;
 }
 
@@ -218,8 +299,10 @@ body.yt #yt {
 }
 
 #yt-status {
-  font-size: 11.5px;
-  line-height: 15px;
+  padding: 0 0 0 10px;
+  font-size: 11px;
+  line-height: 12px;
+  margin-top: 1px;
   color: var(--fg-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -230,7 +313,7 @@ body.yt #yt {
   color: #ffb4a8;
 }
 
-body.yt #youtube {
+body.yt #window-btns #youtube {
   color: var(--accent);
 }
 
@@ -248,6 +331,16 @@ body.yt #youtube {
 #window-btns {
   margin-left: 4px;
   align-self: flex-start;
+  gap: 2px;
+}
+
+/* Boutons de la fenêtre : discrets au repos, ils s'allument au survol */
+#window-btns .btn:not(.active) {
+  color: var(--fg-faint);
+}
+
+#window-btns .btn:hover {
+  color: var(--fg);
 }
 
 /* ---------- Boutons ---------- */
@@ -287,6 +380,23 @@ body.yt #youtube {
 
 .btn.active {
   color: var(--accent);
+}
+
+/* Lecture aléatoire, répétition : un petit point sous l'icône quand le mode est actif */
+#transport .btn {
+  position: relative;
+}
+
+#transport .btn.active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 /* Source des effets du morceau en cours, sur le bouton ✦ : un point qui pulse pendant la séparation des
@@ -340,14 +450,14 @@ body.yt #youtube {
 }
 
 .btn.small {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
 }
 
 .btn.small svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 #close:hover {
@@ -389,27 +499,35 @@ input[type="range"] {
   width: 64px;
 }
 
+/* Curseurs fins, qui s'épaississent au survol ; la poignée n'apparaît qu'à ce moment-là */
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(to right, var(--fg) var(--pct), var(--track) var(--pct));
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.9) var(--pct), rgba(255, 255, 255, 0.16) var(--pct));
+  transition: height 0.15s;
+}
+
+input[type="range"]:hover::-webkit-slider-runnable-track,
+input[type="range"]:active::-webkit-slider-runnable-track {
+  height: 5px;
 }
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 11px;
   height: 11px;
-  margin-top: -3.5px;
+  margin-top: -4px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  opacity: 0;
-  transition: opacity 0.15s;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transform: scale(0);
+  transition: transform 0.15s;
 }
 
 input[type="range"]:hover::-webkit-slider-thumb,
 input[type="range"]:active::-webkit-slider-thumb {
-  opacity: 1;
+  margin-top: -3px;
+  transform: scale(1);
 }
 
 input[type="range"]:focus {

@@ -220,8 +220,8 @@ function renderFx() {
 
 // `kind` : 'folder' ou 'track' ; sans, un petit menu sous la souris demande lequel (voir choose-folder).
 // Une piste choisie : on lit son dossier en commençant par elle.
-async function chooseFolder(kind) {
-  const result = await api.chooseFolder(kind);
+async function chooseFolder(kind, anchor) {
+  const result = await api.chooseFolder(kind, anchor);
   if (!result) return;
   folder = result.folder;
   if (result.file) setTracks(result.tracks, result.file, 0, true);
@@ -242,6 +242,12 @@ function setYtStatus(text, error = false) {
   ui.ytStatus.textContent = text;
   ui.ytStatus.title = text;
   ui.ytStatus.classList.toggle('error', error);
+  // barre de progression du champ : le pourcentage du téléchargement s'il est donné, sinon une attente
+  const pct = /(\d+)\s?%/.exec(text);
+  const yt = $('yt');
+  yt.classList.toggle('busy', ytBusy && !error);
+  yt.classList.toggle('waiting', ytBusy && !error && !pct);
+  yt.style.setProperty('--yt-pct', pct ? `${pct[1]}%` : '');
 }
 
 async function openYoutube(url = null) {
@@ -375,7 +381,7 @@ function renderModes() {
 
 function renderVolume() {
   const silent = audio.muted || audio.volume === 0;
-  ui.muteIcon.setAttribute('href', silent ? '#i-volume-off' : '#i-volume');
+  ui.muteIcon.setAttribute('href', silent ? '#i-volume-off' : audio.volume < 0.5 ? '#i-volume-low' : '#i-volume');
   ui.mute.title = audio.muted ? 'Rétablir le son' : 'Couper le son';
   setRange(ui.volume, audio.muted ? 0 : audio.volume);
 }
@@ -419,8 +425,10 @@ $('next').addEventListener('click', () => next());
 $('prev').addEventListener('click', prev);
 ui.shuffle.addEventListener('click', toggleShuffle);
 ui.repeat.addEventListener('click', cycleRepeat);
-$('folder').addEventListener('click', () => chooseFolder());
-ui.fx.addEventListener('click', () => api.showEffectsMenu());
+// rectangle d'un bouton, pour ouvrir son menu juste dessous
+const anchorOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+$('folder').addEventListener('click', () => chooseFolder(undefined, anchorOf($('folder'))));
+ui.fx.addEventListener('click', () => api.showEffectsMenu(anchorOf(ui.fx)));
 ui.coverImg.addEventListener('load', () => api.reportPlayback({ fxColor: ambiance.setColor(ui.coverImg) }));
 $('cover').addEventListener('click', () => {
   if (current()) api.openEditor(current().path);
@@ -431,6 +439,18 @@ $('youtube').addEventListener('click', () => {
 });
 $('close').addEventListener('click', () => api.hideWindow());
 ui.mute.addEventListener('click', toggleMute);
+
+// Titre ou artiste trop long : fondu sur le bord et défilement au survol (style.css, classe long), sur la
+// longueur qui dépasse, à ~30 px/s
+function fitText(el) {
+  el.classList.remove('long');
+  const overflow = el.scrollWidth - el.clientWidth;
+  el.classList.toggle('long', overflow > 1);
+  el.style.setProperty('--shift', `${-overflow - 4}px`);
+  el.style.setProperty('--scroll-time', `${Math.max(3, overflow / 30 + 1.5).toFixed(1)}s`);
+}
+for (const el of [ui.title, ui.artist]) new MutationObserver(() => fitText(el)).observe(el, { childList: true, characterData: true, subtree: true });
+window.addEventListener('resize', () => { fitText(ui.title); fitText(ui.artist); });
 ui.info.addEventListener('click', () => {
   if (ui.info.classList.contains('clickable')) chooseFolder();
 });

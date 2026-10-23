@@ -1,0 +1,126 @@
+/* Menus du lecteur (bouton ✨, bouton dossier, clic droit) : une petite fenêtre de verre sombre sous le
+   bouton. Les hauteurs (rangée 28 px, séparateur 9 px, titre de section 24 px, marge 6 px) sont celles que
+   main.js compte pour dimensionner la fenêtre (voir popupGlassMenu). */
+/* la fenêtre prend la hauteur du menu affiché (voir menu.js) */
+html,
+body {
+  background: rgba(16, 18, 28, 0.62);
+  border-radius: 8px;
+}
+
+#menu {
+  padding: 6px;
+  border-radius: 8px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.01) 45%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  font-size: 12.5px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+
+.item:hover,
+.item:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.item:disabled {
+  color: var(--fg-faint);
+  cursor: default;
+  background: transparent;
+}
+
+/* coche (case) ou point (choix parmi plusieurs), à gauche ; rien quand ce n'est pas coché */
+.mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+.mark svg {
+  width: 15px;
+  height: 15px;
+}
+
+.radio.checked .mark::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* une liste dans le menu (l'effet sonore) : son choix en cours et un chevron ; une fois ouverte, la rangée
+   de retour en tête */
+.value {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+}
+
+.chevron {
+  flex: none;
+  display: grid;
+  margin-right: -4px;
+  color: var(--fg-faint);
+}
+
+.chevron svg,
+.back .mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+.back {
+  font-weight: 600;
+}
+
+.back .mark {
+  color: var(--fg-dim);
+}
+
+.sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.header {
+  height: 24px;
+  padding: 7px 10px 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}

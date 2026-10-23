@@ -32,7 +32,7 @@ const DEFAULTS = {
   fxNotesLevel: 1,
   fxSyncMs: 0,             // avance (+) ou retard (−) des effets sur le son, réglée à l'oreille
   fxSyncByDevice: {},      // la même, retenue pour chaque sortie audio (un casque Bluetooth a son propre retard)
-  fxTheme: 'aurora',       // 'aurora' | 'neon' | 'ember' | 'mono' (voir FX_THEMES)
+  fxTheme: 'glass',        // 'glass' | 'aurora' | 'neon' | 'ember' | 'mono' (voir FX_THEMES)
   fxColorMode: 'theme',    // 'theme' | 'cover' | 'custom'
   fxCustomColor: '#ff7a3d',
   soundFx: 'none',         // effet sonore à l'écoute (voir SOUND_EFFECTS)
@@ -856,7 +856,7 @@ function send(cmd, arg) {
 // ---------- Effets d'ambiance ----------
 
 // Mêmes noms que FX_THEMES dans renderer/effects.js
-const FX_THEMES = [['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
+const FX_THEMES = [['glass', 'Verre liquide'], ['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
 
 // Réglages modifiables depuis la fenêtre de personnalisation, avec leurs valeurs admises
 const FX_SETTINGS = {
@@ -902,7 +902,7 @@ function setEffects(partial) {
 // ---------- Fenêtre « Personnaliser les effets » ----------
 
 const FX_PANEL_WIDTH = 360;
-const FX_PANEL_HEIGHT = 710; // descriptions des effets sur deux lignes, boutons du bas compris
+const FX_PANEL_HEIGHT = 840; // cinq thèmes (trois rangées), descriptions des effets sur deux lignes, boutons du bas compris
 let fxPanel = null;
 
 function openFxPanel() {
@@ -980,8 +980,107 @@ function soundMenu() {
 
 // Clic droit sur le lecteur : uniquement l'effet sonore
 function showSoundMenu() {
-  Menu.buildFromTemplate([{ label: 'Effet sonore', enabled: false }, ...soundMenu()]).popup({ window: win });
+  popupGlassMenu([{ label: 'Effet sonore', enabled: false }, ...soundMenu()]);
 }
+
+// ---------- Menus en verre ----------
+
+// Les menus du lecteur (bouton ✨, bouton dossier, clic droit) : une petite fenêtre de verre sombre sous le
+// bouton (renderer/menu.html), au lieu du menu natif de Windows, impossible à styler. Le menu de la zone de
+// notification, lui, reste natif.
+// `template` : comme pour Menu.buildFromTemplate (label, type 'checkbox' | 'radio' | 'separator', checked,
+// enabled, click(item), submenu : une rangée « libellé — choix en cours › » qui ouvre sa liste dans le même
+// menu, avec un retour) ; un libellé désactivé sans type devient un titre de section. `anchor` : rectangle du bouton dans la page du lecteur ({ x, y, width, height }) ; sans,
+// le menu s'ouvre sous la souris. → promesse résolue à la fermeture du menu (après le clic éventuel).
+const MENU_WIDTH = 232;
+const MENU_ROW = { normal: 28, checkbox: 28, radio: 28, submenu: 28, separator: 9, header: 24 }; // voir menu.css
+let glassMenu = null; // { window, items, clicks }
+
+function popupGlassMenu(template, anchor = null) {
+  glassMenu?.window.close();
+  const clicks = [], rows = [];
+  const build = (list) => {
+    const items = [];
+    for (const it of list) {
+      if (it.type === 'separator') {
+        if (items.length && items[items.length - 1].type !== 'separator') items.push({ type: 'separator' });
+      } else if (it.submenu) {
+        const chosen = it.submenu.find((sub) => sub.checked && sub.type === 'radio');
+        items.push({ type: 'submenu', label: it.label, value: chosen?.label || '', enabled: true, items: build(it.submenu) });
+      } else if (it.enabled === false && !it.type && !it.click) {
+        items.push({ type: 'header', label: it.label });
+      } else {
+        const row = { id: clicks.length, label: it.label, type: it.type || 'normal', checked: !!it.checked, enabled: it.enabled !== false };
+        items.push(row);
+        rows.push(row);
+        clicks.push(it);
+      }
+    }
+    while (items.length && items[items.length - 1].type === 'separator') items.pop();
+    return items;
+  };
+  const items = build(template);
+  const height = 12 + items.reduce((sum, it) => sum + MENU_ROW[it.type], 0);
+
+  // Sous le bouton, aligné sur son bord droit ; au-dessus s'il n'y a pas la place en bas
+  const page = win.getContentBounds();
+  const cursor = screen.getCursorScreenPoint();
+  const point = anchor
+    ? { x: page.x + anchor.x + anchor.width - MENU_WIDTH, y: page.y + anchor.y + anchor.height + 4, top: page.y + anchor.y - 4 }
+    : { x: cursor.x, y: cursor.y, top: cursor.y };
+  const area = screen.getDisplayNearestPoint(point).workArea;
+  const x = Math.max(area.x, Math.min(point.x, area.x + area.width - MENU_WIDTH));
+  const y = point.y + height <= area.y + area.height ? point.y : Math.max(area.y, point.top - height);
+
+  const menuWin = new BrowserWindow({
+    x: Math.round(x), y: Math.round(y), width: MENU_WIDTH, height,
+    parent: win,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundMaterial: 'acrylic',
+    backgroundColor: '#00000000',
+    show: false,
+    icon: ICON_PATH,
+    webPreferences: { preload: path.join(__dirname, 'menu-preload.js') },
+  });
+  const current = { window: menuWin, items, rows, clicks, top: Math.round(y) };
+  glassMenu = current;
+  menuWin.loadFile(path.join(__dirname, 'renderer', 'menu.html'));
+  menuWin.once('ready-to-show', () => { menuWin.show(); menuWin.focus(); });
+  // Même souci de première image que le lecteur avec le fond acrylic.
+  menuWin.on('show', () => setTimeout(() => !menuWin.isDestroyed() && menuWin.webContents.invalidate(), 50));
+  menuWin.on('blur', () => !menuWin.isDestroyed() && menuWin.close()); // un clic ailleurs le ferme
+  return new Promise((resolve) => menuWin.on('closed', () => {
+    if (glassMenu === current) glassMenu = null;
+    resolve();
+  }));
+}
+
+const fromMenu = (e) => glassMenu && e.sender === glassMenu.window.webContents;
+ipcMain.handle('menu-items', (e) => (fromMenu(e) ? glassMenu.items : []));
+ipcMain.on('menu-close', (e) => fromMenu(e) && glassMenu.window.close());
+// une liste ouverte depuis le menu (ou le retour) change sa hauteur : la fenêtre suit, sans sortir de l'écran
+ipcMain.on('menu-resize', (e, height) => {
+  if (!fromMenu(e)) return;
+  const menuWin = glassMenu.window, bounds = menuWin.getBounds();
+  const area = screen.getDisplayMatching(bounds).workArea;
+  const h = Math.round(Math.min(height, area.height));
+  menuWin.setBounds({ ...bounds, y: Math.max(area.y, Math.min(glassMenu.top, area.y + area.height - h)), height: h });
+});
+ipcMain.on('menu-click', (e, id) => {
+  if (!fromMenu(e)) return;
+  const { window: menuWin, rows, clicks } = glassMenu;
+  const it = clicks[id], shown = rows.find((row) => row.id === id);
+  // comme un menu natif : une case passe à l'état inverse, un choix parmi plusieurs devient coché ; le clic
+  // compte avant la fermeture (le choix du bouton dossier attend la fermeture)
+  if (it?.click && shown?.enabled) it.click({ checked: shown.type === 'checkbox' ? !shown.checked : true });
+  menuWin.close();
+});
 
 // Même menu depuis le bouton ✨ du lecteur et depuis la zone de notification
 function effectsMenu() {
@@ -996,10 +1095,10 @@ function effectsMenu() {
       click: () => setEffects({ fxTheme: value }),
     })),
     { type: 'separator' },
-    { label: 'Rythme (la pochette)', type: 'checkbox', checked: settings.fxPulse, click: (item) => setEffects({ fxPulse: item.checked }) },
-    { label: 'Basse tenue (le contour)', type: 'checkbox', checked: settings.fxPressure, click: (item) => setEffects({ fxPressure: item.checked }) },
-    { label: 'Halo d\'ambiance', type: 'checkbox', checked: settings.fxHalo, click: (item) => setEffects({ fxHalo: item.checked }) },
-    { label: 'Voix et mélodie', type: 'checkbox', checked: settings.fxNotes, click: (item) => setEffects({ fxNotes: item.checked }) },
+    { label: 'Rythme', type: 'checkbox', checked: settings.fxPulse, click: (item) => setEffects({ fxPulse: item.checked }) },
+    { label: 'Basse', type: 'checkbox', checked: settings.fxPressure, click: (item) => setEffects({ fxPressure: item.checked }) },
+    { label: 'Ambiance', type: 'checkbox', checked: settings.fxHalo, click: (item) => setEffects({ fxHalo: item.checked }) },
+    { label: 'Voix', type: 'checkbox', checked: settings.fxNotes, click: (item) => setEffects({ fxNotes: item.checked }) },
     { type: 'separator' },
     { label: 'Personnaliser les effets…', click: openFxPanel },
   ];
@@ -1081,17 +1180,16 @@ ipcMain.handle('get-initial-state', async () => {
 });
 
 // Choix de la musique : `kind` 'folder' (un dossier entier), 'track' (une piste : on lit son dossier en
-// commençant par elle), ou rien pour le demander dans un petit menu sous la souris (bouton dossier).
+// commençant par elle), ou rien pour le demander dans un petit menu (sous le bouton `anchor`, ou la souris).
 // Windows ne sait pas proposer pistes et dossiers dans une même fenêtre de choix.
 // → { folder, tracks, file } (file : la piste choisie, ou null), ou null si annulé.
-ipcMain.handle('choose-folder', async (_e, kind) => {
-  if (!kind) kind = await new Promise((resolve) => {
-    let chosen = null;
-    Menu.buildFromTemplate([
-      { label: 'Choisir une piste…', click: () => { chosen = 'track'; } },
-      { label: 'Choisir un dossier…', click: () => { chosen = 'folder'; } },
-    ]).popup({ window: win, callback: () => setTimeout(() => resolve(chosen), 50) }); // le clic peut suivre la fermeture
-  });
+ipcMain.handle('choose-folder', async (_e, kind, anchor) => {
+  if (!kind) {
+    await popupGlassMenu([
+      { label: 'Choisir une piste…', click: () => { kind = 'track'; } },
+      { label: 'Choisir un dossier…', click: () => { kind = 'folder'; } },
+    ], anchor);
+  }
   if (!kind) return null;
   const result = await dialog.showOpenDialog(win, kind === 'track'
     ? {
@@ -1163,7 +1261,7 @@ ipcMain.on('save-state', (_e, partial) => {
 });
 
 ipcMain.on('hide-window', () => win.hide());
-ipcMain.on('effects-menu', () => Menu.buildFromTemplate(effectsMenu()).popup({ window: win }));
+ipcMain.on('effects-menu', (_e, anchor) => popupGlassMenu(effectsMenu(), anchor));
 ipcMain.on('sound-menu', showSoundMenu);
 
 ipcMain.on('playback', (_e, info) => {

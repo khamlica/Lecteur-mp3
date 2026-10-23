@@ -735,7 +735,7 @@ const FX_PROFILE_MAX = 15 * 60; // au-delà (mix d'une heure…), on reste en mo
 // chaque effet joué en avance de son propre retard (analyse + montée), mesuré sur des attaques
 // et des changements connus : la pulsation est à mi-hauteur ~51 ms après l'attaque, une note ~78 ms,
 // la pression à mi-chemin 0,5 s après l'arrivée de la basse, le halo 1,5 s après un drop.
-const FX_LEAD = { melody: 0.06, melodyTone: 0.06, pulse: 0.051, pulseHigh: 0.051, pulseRate: 0.051, voicePresence: 0.1, dreamy: 0.8, lift: 0.8, peak: 0.8, bassLevel: 0.051, bassPunch: 0.051, noteLeft: 0.078, noteRight: 0.078, noteLeftA: 0.078, noteRightA: 0.078, pressure: 0.5, glow: 1.5, brightness: 0.7 };
+const FX_LEAD = { pulse: 0.051, pulseHigh: 0.051, pulseRate: 0.051, voicePresence: 0.1, dreamy: 0.8, lift: 0.8, peak: 0.8, bassLevel: 0.051, bassPunch: 0.051, noteLeft: 0.078, noteRight: 0.078, noteLeftA: 0.078, noteRightA: 0.078, pressure: 0.5, glow: 1.5, brightness: 0.7 };
 const FX_DISPLAY_LATENCY = 0.025; // le temps qu'une image calculée apparaisse à l'écran
 // Retard de la position de lecture (currentTime) sur ce que voit l'analyse : 0 à 8 ms sur la machine de
 // développement, mesuré sur des coups à instants connus. Ce n'est qu'un point de départ : il est
@@ -1567,6 +1567,7 @@ function trackProfile(frames, dt) {
 // null pour Aurore, qui prend celles de la pochette.
 
 const FX_THEMES = {
+  glass: { label: 'Verre liquide', colors: null },
   aurora: { label: 'Aurore', colors: null },
   neon: { label: 'Néon', colors: [[0, 229, 255], [255, 43, 214]] },
   ember: { label: 'Braise', colors: [[196, 42, 18], [255, 176, 64]] },
@@ -1611,7 +1612,7 @@ function fxPalette(themeName, base, brightness) {
   const theme = FX_THEMES[themeName] || FX_THEMES.aurora;
   const white = [255, 255, 255];
   if (theme.colorless) return { color: white, halo: white, accent: white, note: white };
-  if (themeName === 'aurora') {
+  if (themeName === 'aurora' || themeName === 'glass') {
     // Plus claire quand le son est brillant, plus profonde quand il est sombre.
     const halo = base.map((c) => Math.round(c * (0.7 + 0.3 * brightness) + (255 - c) * 0.35 * brightness));
     // La basse prend une teinte voisine, plus froide : elle se distingue de la pulsation sur le bord.
@@ -1644,22 +1645,26 @@ function applyFx(el, themeName, base, v, now) {
   // vivement à chaque note (les coups du motif signature ne l'éclairent plus)
   const voice = Math.min(1, 0.4 * (v.voicePresence || 0) + Math.max(v.noteLeft, v.noteRight));
   el.style.setProperty('--fx-cover-light', voice.toFixed(3));
-  // Mélodie de fond : la teinte du halo, plus profonde quand elle est sombre, plus claire quand elle brille
-  // (une teinte décalée de celle du halo d'énergie, pour ne pas se confondre avec lui ni avec la basse)
-  const melody = FX_THEMES[themeName]?.colorless ? [220, 220, 220] : fxShift(p.halo, 60, 0.7, 0.6);
-  el.style.setProperty('--fx-melody', (v.melody || 0).toFixed(3));
   // Passage aigu : une lumière claire, la teinte du halo éclaircie, qui descend du haut du lecteur
   el.style.setProperty('--fx-lift', (v.lift || 0).toFixed(3));
   el.style.setProperty('--fx-lift-color', (FX_THEMES[themeName]?.colorless ? [255, 255, 255] : fxMix(p.halo, [255, 255, 255], 0.55)).join(' '));
-  el.style.setProperty('--fx-melody-color', fxMix(fxMix(melody, [0, 0, 0], 0.35), fxMix(melody, [255, 255, 255], 0.55), v.melodyTone ?? 0.5).join(' '));
-  el.dataset.fxTheme = FX_THEMES[themeName] ? themeName : 'aurora';
+  el.dataset.fxTheme = FX_THEMES[themeName] ? themeName : 'glass';
+  // Verre liquide : le reflet qui fait le tour du bord du verre (angle, éclat, et sa couleur : celle de la
+  // pochette tirée vers le blanc)
+  el.style.setProperty('--fx-rim-angle', `${(v.rimAngle || 0).toFixed(1)}deg`);
+  // … et la pochette qui s'enfonce dans le verre sur chaque coup, puis revient avec un rebond amorti
+  el.style.setProperty('--fx-press', (v.press ?? v.pulse).toFixed(3));
+  el.style.setProperty('--fx-rim', Math.min(1, Math.max(v.punch || 0, 0.4 * v.pressure)).toFixed(3));
+  el.style.setProperty('--fx-glint', (FX_THEMES[themeName]?.colorless ? [255, 255, 255] : fxMix(v.coverColor || p.color, [255, 255, 255], 0.6)).join(' '));
   el.style.setProperty('--fx-pulse', v.pulse.toFixed(3));
   el.style.setProperty('--fx-pulse-glow', v.pulseGlow.toFixed(3));
   el.style.setProperty('--fx-pressure', v.pressure.toFixed(3));
   el.style.setProperty('--fx-accent', warm.join(' '));
   // Halo d'ambiance, relevé par la basse tenue (voir fxDose) ; dans un passage rêveur (voir fxDreamy), il
   // respire lentement (~4 s) et se réchauffe, s'il est là
-  const breath = 1 + 0.2 * dreamy * Math.sin((2 * Math.PI * now) / 4);
+  // (Verre liquide : il respire aussi pendant un moment fort)
+  const swell = themeName === 'glass' ? 0.15 * (v.peak || 0) : 0;
+  const breath = 1 + (0.2 * dreamy + swell) * Math.sin((2 * Math.PI * now) / 4);
   el.style.setProperty('--fx-glow', Math.min(1, v.glow * breath + (v.glowBeat || 0)).toFixed(3));
   // … et des étincelles discrètes scintillent sur tout le lecteur (animées seulement pendant le passage)
   el.style.setProperty('--fx-dreamy', dreamy.toFixed(3));
@@ -1672,6 +1677,10 @@ function applyFx(el, themeName, base, v, now) {
   el.style.setProperty('--fx-halo-color', fxMix(p.halo, warm, 0.65 * dreamy).join(' '));
   // Pochette : sa lueur de percussion est de sa propre couleur, comme une lumière derrière l'image
   el.style.setProperty('--fx-cover-color', (v.coverColor || p.color).join(' '));
+  // de 0,5 (couleur presque grise : pochette en noir et blanc) à 1 (couleur franche), selon son écart entre
+  // composantes (la saturation TSL d'un blanc bleuté paraîtrait forte)
+  const cover = v.coverColor || p.color;
+  el.style.setProperty('--fx-cover-vivid', (0.5 + 0.5 * Math.min(1, (Math.max(...cover) - Math.min(...cover)) / 255 / 0.3)).toFixed(3));
   // la même, plus sombre : le contour de la basse (sauf en Néon, où il est en lumière pleine)
   el.style.setProperty('--fx-cover-dark', fxMix(v.coverColor || p.color, [0, 0, 0], 0.45).join(' '));
   // Vacillement des braises : sinusoïdes lentes et désaccordées, pour ne pas sembler mécanique.
@@ -1717,17 +1726,19 @@ function fxDose(fx, config) {
   // halo d'ambiance (le fond flou) : la basse tenue le relève, le refrain aussi ; sans eux, il ne s'affiche
   // pas. Au refrain, il reste au tiers et remonte sur chaque coup de basse (glowBeat, ajouté après son
   // fondu : voir render) au lieu d'un fond clair immobile pendant 30 s
-  const glow = config.halo ? fxLevel(Math.max(held, 0.35 * peak), config.levels.halo) : 0;
-  const glowBeat = config.halo ? 0.5 * fxLevel(peak * punch, config.levels.halo) : 0;
+  // (Verre liquide : le fond monte au refrain et y respire lentement, voir applyFx ; seul le reflet du bord
+  // bat sur les coups de basse)
+  const glass = config.theme === 'glass';
+  const glow = config.halo ? fxLevel(Math.max(held, (glass ? 0.6 : 0.35) * peak), config.levels.halo) : 0;
+  const glowBeat = config.halo && !glass ? 0.5 * fxLevel(peak * punch, config.levels.halo) : 0;
   const notes = config.notes ? config.levels.notes : 0;
   return {
-    pulse, pulseGlow, pressure, glow, glowBeat, brightness: fx.brightness,
+    pulse, pulseGlow, pressure, glow, glowBeat, peak, brightness: fx.brightness,
+    // coups de basse (le reflet du bord du verre, en Verre liquide), avec la basse tenue
+    punch: config.pressure ? fxLevel(punch, config.levels.pressure) : 0,
     // percussions (la pochette s'éclaire) avec le rythme
     // passage rêveur, avec le halo d'ambiance
     dreamy: config.halo ? Math.min(1, (fx.dreamy || 0) * config.levels.halo) : 0,
-    // mélodie de fond (pistes séparées seulement) avec la voix, réglage « Voix et mélodie »
-    melody: config.notes ? fxLevel(fx.melody || 0, config.levels.notes) * pulseGlow : 0,
-    melodyTone: fx.melodyTone ?? 0.5,
     noteLeft: fxLevel(fx.noteLeft, notes), noteRight: fxLevel(fx.noteRight, notes),
     voicePresence: fxLevel(fx.voicePresence || 0, notes),
     // passage aigu (le haut du lecteur s'éclaire), avec la voix et la mélodie
@@ -1752,8 +1763,7 @@ const FX_STEMS_VERSION = 2;
 // de l'interface.
 //   batterie → coups graves (pulse : la pochette saute) et aigus (pulseHigh : elle s'éclaire), pulseRate
 //   voix     → halo gauche/droite (noteLeft/noteRight)
-//   autres   → mélodie de fond (melody, haut et bas du lecteur ; melodyTone sa couleur, de la brillance)
-//              et, pour le karaoké (voix retirée), les notes des instruments (noteLeftA/noteRightA)
+//   autres   → pour le karaoké (voix retirée), les notes des instruments (noteLeftA/noteRightA)
 //   basse    → basse tenue (pressure, le contour)
 async function fxStemChannels(tracks) {
   const duration = tracks.drums.length / FX_PROFILE_RATE;
@@ -1764,16 +1774,6 @@ async function fxStemChannels(tracks) {
   if (vocals?.timeline) for (const k of ['noteLeft', 'noteRight']) out[k] = vocals.timeline[k];
   if (other?.timeline) {
     const t = other.timeline;
-    // Seules les nouvelles phrases et les accents ressortent : on retire le niveau de fond (suivi sur
-    // ~1,5 s) et l'éclat retombe en ~0,25 s — sinon les instruments de fond allument le cadre en continu.
-    const raw = Float32Array.from(t.noteLeft, (v, i) => Math.max(v, t.noteRight[i]));
-    out.melody = new Float32Array(raw.length);
-    for (let i = 0, base = 0, glow = 0; i < raw.length; i++) {
-      base = follow(base, raw[i], FX_STEP, 1.5, 1.5);
-      glow = Math.max(glow * Math.exp(-FX_STEP / 0.25), Math.min(1, 2 * Math.max(0, raw[i] - base)));
-      out.melody[i] = glow;
-    }
-    out.melodyTone = t.brightness;
     out.noteLeftA = t.noteLeft;
     out.noteRightA = t.noteRight;
   }
@@ -1789,7 +1789,7 @@ async function fxStemChannels(tracks) {
 function createAmbiance(audio, bar, readFile, sound, stems = null) {
   let config = {
     pulse: false, pressure: false, halo: false, notes: false,
-    theme: 'aurora', colorMode: 'theme', customColor: '#ff7a3d',
+    theme: 'glass', colorMode: 'theme', customColor: '#ff7a3d',
     levels: { pulse: 1, pressure: 1, halo: 1, notes: 1 }, // intensité de chaque effet, de 0 à 1,5
     source: 'mix', // 'mix' : effets du morceau entier ; 'stems' : ceux des pistes séparées, si le morceau l'a été (separateNow)
     syncMs: 0, // avance (+) ou retard (−) des effets sur le son, réglée à l'oreille
@@ -1800,7 +1800,7 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
   let frame = 0;
   let last = 0;
   const feel = createFeel();
-  const idle = { pulse: 0, pulseHigh: 0, voicePresence: 0, dreamy: 0, lift: 0, peak: 0, melody: 0, melodyTone: 0.5, pulseRate: 0, pressure: 0, glow: 0, noteLeft: 0, noteRight: 0, brightness: 0.5 };
+  const idle = { pulse: 0, pulseHigh: 0, voicePresence: 0, dreamy: 0, lift: 0, peak: 0, pulseRate: 0, pressure: 0, glow: 0, noteLeft: 0, noteRight: 0, brightness: 0.5 };
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let fx = idle;
   let lastEnergyRef = FX_ENERGY_FLOOR;
@@ -1881,7 +1881,7 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
   // En pause, les effets s'éteignent doucement (la brillance garde sa valeur).
   const fadeOut = (values, dt) => {
     const k = Math.exp(-dt / 0.25);
-    return { ...values, pulse: values.pulse * k, pulseHigh: values.pulseHigh * k, melody: (values.melody || 0) * k, pulseRate: values.pulseRate * k, pressure: values.pressure * k, glow: values.glow * k, noteLeft: values.noteLeft * k, noteRight: values.noteRight * k, peak: (values.peak || 0) * k, bassPunch: (values.bassPunch || 0) * k };
+    return { ...values, pulse: values.pulse * k, pulseHigh: values.pulseHigh * k, pulseRate: values.pulseRate * k, pressure: values.pressure * k, glow: values.glow * k, noteLeft: values.noteLeft * k, noteRight: values.noteRight * k, peak: (values.peak || 0) * k, bassPunch: (values.bassPunch || 0) * k };
   };
 
   // Un seul morceau analysé à la fois : si on enchaîne les morceaux, seul le dernier compte.
@@ -2007,17 +2007,17 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     if (ease > 0 && !audio.paused) {
       ease = Math.max(0, ease - dt / 0.8);
       fx = { ...fx };
-      for (const k of ['glow', 'pressure', 'brightness', 'melody', 'voicePresence', 'dreamy', 'lift', 'peak']) fx[k] = follow(prev[k] || 0, fx[k] || 0, dt, 0.3, 0.3);
+      for (const k of ['glow', 'pressure', 'brightness', 'voicePresence', 'dreamy', 'lift', 'peak']) fx[k] = follow(prev[k] || 0, fx[k] || 0, dt, 0.3, 0.3);
     }
     render(dt);
-    const faded = ['pulse', 'pulseHigh', 'voicePresence', 'dreamy', 'lift', 'peak', 'melody', 'pressure', 'glow', 'noteLeft', 'noteRight'].every((k) => !(fx[k] >= 0.005));
+    const faded = ['pulse', 'pulseHigh', 'voicePresence', 'dreamy', 'lift', 'peak', 'pressure', 'glow', 'noteLeft', 'noteRight'].every((k) => !(fx[k] >= 0.005));
     if (audio.paused && faded) stop();
   }
 
   // Les effets couvrent tout le lecteur : fx-themes.css lit ces valeurs sur #bar.
   // Mouvements réduits : la pulsation devient un fondu (montée ~60 ms, retombée ~200 ms) plutôt
   // qu'un flash, qui retombe quand même entre deux coups pour que le rythme reste lisible.
-  let shownPulse = 0, shownMelody = 0, shownGlow = 1, shownHalo = 0, bassAverage = 0, voiceAverage = 0, shownGrain = 0, shownBeat = 0;
+  let shownPulse = 0, shownGlow = 1, shownHalo = 0, bassAverage = 0, voiceAverage = 0, shownGrain = 0, shownBeat = 0, rimAngle = 0, press = 0, pressSpeed = 0;
   function render(dt = FX_STEP) {
     const v = fxDose(fx, config);
     // La sécurité change en douceur (~0,4 s), jamais d'une image à l'autre
@@ -2028,6 +2028,19 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     v.glow = shownHalo = follow(shownHalo, v.glow, dt, 0.35, 0.8);
     // … sauf ses battements au refrain, vifs (mouvements réduits : une lente houle)
     v.glowBeat = shownBeat = follow(shownBeat, v.glowBeat, dt, reducedMotion.matches ? 0.3 : 0.03, reducedMotion.matches ? 0.6 : 0.15);
+    // Verre liquide : le reflet fait le tour du bord, lentement (~18 s), et s'élance sur chaque coup de basse
+    // (mouvements réduits : à vitesse lente et constante)
+    rimAngle = (rimAngle + dt * (reducedMotion.matches ? 8 : 20 + 220 * v.punch)) % 360;
+    v.rimAngle = rimAngle;
+    // La pochette suit les coups comme sur un ressort (~7 Hz, amorti : un léger rebond au retour), calculé
+    // par pas de 4 ms au plus pour rester stable quand des images sautent
+    const stiffness = (2 * Math.PI * 7) ** 2, damping = 2 * 0.4 * 2 * Math.PI * 7;
+    for (let left = dt; left > 0; left -= 0.004) {
+      const h = Math.min(0.004, left);
+      pressSpeed += (stiffness * (v.pulse - press) - damping * pressSpeed) * h;
+      press += pressSpeed * h;
+    }
+    v.press = press;
     // Passage rêveur : le grain brille au rythme de la basse ou de la voix, sur leurs attaques (ce qui dépasse
     // leur moyenne des ~0,6 dernières secondes : des notes enchaînées ne le laissent pas allumé) ; entre
     // deux, il garde son éclat de base
@@ -2041,7 +2054,6 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     if (weights.pressure !== undefined) v.pressure = fxLevel(v.pressure, weights.pressure);
     if (reducedMotion.matches) {
       v.pulse = shownPulse = follow(shownPulse, v.pulse, dt, 0.06, 0.2);
-      v.melody = shownMelody = follow(shownMelody, v.melody, dt, 0.06, 0.2);
     }
     v.warm = warm;
     v.coverColor = color;
@@ -2060,7 +2072,7 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     cancelAnimationFrame(frame);
     frame = 0;
     fx = idle;
-    shownPulse = shownMelody = shownHalo = bassAverage = voiceAverage = shownGrain = shownBeat = 0;
+    shownPulse = shownHalo = bassAverage = voiceAverage = shownGrain = shownBeat = press = pressSpeed = 0;
     render();
   }
 
@@ -2203,11 +2215,13 @@ function warmColor(img) {
   return [r / total, gr / total, b / total].map(Math.round);
 }
 
-// Couleur de la pochette pour les effets : celle qui ressort le plus une fois éclairée (le titre rouge de
-// Bloody Paradise), pas la moyenne des pixels, où le rouge, le vert sombre et le beige se mêlent en un rose
-// terne. Chaque pixel coloré vote pour sa teinte (24 tranches de 15°) avec le cube de son éclat (max − min :
-// une couleur à la fois saturée et claire) ; on fait la moyenne des pixels de la teinte gagnante (±22°).
-// Pochette sans couleur franche (noir et blanc) : moyenne pondérée, comme avant.
+// Couleur de la pochette pour les effets : celle qui domine la pochette, couleurs douces comprises (le rose
+// poudré de Hootie Frutti, le bleu ciel d'Over The Moon), dans sa saturation d'origine. Ni la moyenne des
+// pixels, où les teintes se mêlent en un brun terne, ni la plus éclatante, une couleur fluo qui ne ressemblait
+// pas à la plupart des pochettes (l'orange de la peau sur Wait On Me). Chaque pixel un peu coloré vote pour sa
+// teinte (24 tranches de 15°) selon sa surface, un peu plus s'il est vif ; on fait la moyenne des pixels de
+// la teinte gagnante (±22°), ramenée à une clarté moyenne (0,62) pour rester lumineuse sur le verre sombre,
+// saturation entre 0,25 et 0,85. Pochette presque sans couleur (noir et blanc) : un blanc à peine bleuté.
 function dominantColor(img) {
   const size = 48, slices = 24;
   const canvas = document.createElement('canvas');
@@ -2217,14 +2231,13 @@ function dominantColor(img) {
   const data = g.getImageData(0, 0, size, size).data;
   const votes = new Float64Array(slices), colored = [];
   for (let i = 0; i < data.length; i += 4) {
-    const max = Math.max(data[i], data[i + 1], data[i + 2]), min = Math.min(data[i], data[i + 1], data[i + 2]);
-    if (max < 51 || max - min < 0.25 * max) continue; // trop sombre ou trop terne
-    const [h] = fxHsl([data[i], data[i + 1], data[i + 2]]);
-    const w = ((max - min) / 255) ** 3;
+    const [h, s, l] = fxHsl([data[i], data[i + 1], data[i + 2]]);
+    if (l < 0.08 || l > 0.95 || s < 0.1) continue; // noir, blanc ou gris
+    const w = 0.25 + (Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2])) / 255;
     votes[Math.floor(h / (360 / slices)) % slices] += w;
     colored.push([h, w, i]);
   }
-  if (!colored.length) return averageColor(img);
+  if (colored.length < 0.04 * size * size) return [235, 235, 240];
   const near = (k) => votes[(k + slices - 1) % slices] / 2 + votes[k] + votes[(k + 1) % slices] / 2;
   let best = 0;
   for (let k = 1; k < slices; k++) if (near(k) > near(best)) best = k;
@@ -2235,32 +2248,6 @@ function dominantColor(img) {
     if (Math.min(d, 360 - d) > 1.5 * (360 / slices)) continue;
     r += data[i] * w; gr += data[i + 1] * w; b += data[i + 2] * w; total += w;
   }
-  // Pleinement lumineuse et franche (saturation d'au moins 85 %, sans blanc ajouté) : le contour, à demi
-  // transparent sur le fond flou, doit rester rouge et non virer au rose
   const rgb = [r / total, gr / total, b / total];
-  const top = Math.max(1, ...rgb), bright = rgb.map((c) => (c * 255) / top);
-  const s = 1 - Math.min(...bright) / 255, boost = s > 0 ? Math.max(s, 0.85) / s : 1;
-  return bright.map((c) => Math.round(255 - (255 - c) * boost));
-}
-
-function averageColor(img) {
-  const size = 16;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const g = canvas.getContext('2d', { willReadFrequently: true });
-  g.drawImage(img, 0, 0, size, size);
-  const data = g.getImageData(0, 0, size, size).data;
-  let r = 0, gr = 0, b = 0, total = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const max = Math.max(data[i], data[i + 1], data[i + 2]);
-    const min = Math.min(data[i], data[i + 1], data[i + 2]);
-    const w = 0.02 + ((max - min) / 255) ** 2 * (max / 255);
-    r += data[i] * w;
-    gr += data[i + 1] * w;
-    b += data[i + 2] * w;
-    total += w;
-  }
-  const rgb = [r / total, gr / total, b / total];
-  const k = 255 / Math.max(1, ...rgb);
-  return rgb.map((c) => Math.round(c * k * 0.8 + 255 * 0.2));
+  return fxShift(rgb, 0, Math.min(0.85, Math.max(fxHsl(rgb)[1], 0.25)), 0.62);
 }

@@ -12,7 +12,7 @@
 </head>
 <body>
   <svg class="sprite" xmlns="http://www.w3.org/2000/svg">
-    <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
   </svg>
 
   <div id="panel">
@@ -42,19 +42,19 @@
     <section>
       <h2>Effets</h2>
       <div class="effect" data-effect="pulse">
-        <label><input type="checkbox"><span>Rythme <small>la pochette saute à chaque coup</small></span></label>
+        <label><input type="checkbox"><span>Rythme <small>la pochette réagit à chaque coup</small></span></label>
         <input type="range" min="0" max="150" step="5"><output></output>
       </div>
       <div class="effect" data-effect="pressure">
-        <label><input type="checkbox"><span>Basse tenue <small>tout le contour, couleur de la pochette ; bat avec la basse au refrain</small></span></label>
+        <label><input type="checkbox"><span>Basse <small>sa lumière monte avec elle, bat au refrain</small></span></label>
         <input type="range" min="0" max="150" step="5"><output></output>
       </div>
       <div class="effect" data-effect="halo">
-        <label><input type="checkbox"><span>Halo d'ambiance <small>fond flou aux couleurs de la pochette, que relève la basse tenue ; il ondule quand c'est rêveur</small></span></label>
+        <label><input type="checkbox"><span>Ambiance <small>le fond aux couleurs de la pochette</small></span></label>
         <input type="range" min="0" max="150" step="5"><output></output>
       </div>
       <div class="effect" data-effect="notes">
-        <label><input type="checkbox"><span>Voix et mélodie <small>la voix éclaire la pochette ; lumière en haut sur les passages aigus</small></span></label>
+        <label><input type="checkbox"><span>Voix <small>éclaire la pochette et les passages aigus</small></span></label>
         <input type="range" min="0" max="150" step="5"><output></output>
       </div>
     </section>
@@ -64,9 +64,8 @@
       <div class="sync">
         <input type="range" id="sync" min="-200" max="200" step="10"><output id="sync-value"></output>
       </div>
-      <div class="hint">Les effets sont calés automatiquement sur le son. Si tu les vois encore en retard
-        (casque Bluetooth…), avance-les ; s'ils arrivent trop tôt, retarde-les.
-        <span id="sync-device"></span></div>
+      <div class="hint">Calés automatiquement sur le son. En retard (casque Bluetooth…) : avance-les ; trop tôt :
+        retarde-les. <span id="sync-device"></span></div>
     </section>
 
     <footer>

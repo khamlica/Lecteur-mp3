@@ -1,12 +1,14 @@
 {
-  "name": "lecteur-mp3",
-  "productName": "Lecteur MP3",
+  "name": "hanabi-player",
+  "productName": "Hanabi Player",
   "version": "1.0.0",
-  "description": "Mini lecteur MP3 transparent pour Windows",
+  "description": "Mini lecteur audio transparent pour Windows",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "release": "npm version patch -m \"Version %s\" && git push --follow-tags",
+    "release:minor": "npm version minor -m \"Version %s\" && git push --follow-tags"
   },
   "author": "Aymane Khamlichi",
   "license": "ISC",
@@ -16,12 +18,13 @@
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "ffmpeg-static": "^5.3.0",
     "music-metadata": "^12.2.3"
   },
   "build": {
     "appId": "com.khamlichi.lecteurmp3",
-    "productName": "Lecteur MP3",
+    "productName": "Hanabi Player",
     "files": [
       "src/**/*",
       "assets/**/*"
@@ -34,6 +37,15 @@
       "en-US"
     ],
     "compression": "maximum",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "khamlica",
+        "repo": "Lecteur-mp3",
+        "private": true,
+        "releaseType": "release"
+      }
+    ],
     "win": {
       "target": "nsis",
       "icon": "assets/icon.png"
@@ -43,7 +55,8 @@
       "allowToChangeInstallationDirectory": true,
       "createStartMenuShortcut": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Lecteur MP3"
+      "shortcutName": "Hanabi Player",
+      "artifactName": "Hanabi-Player-Setup-${version}.${ext}"
     }
   },
   "allowScripts": {

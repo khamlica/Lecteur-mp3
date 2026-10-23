@@ -1,0 +1,39 @@
+# Construit l'installeur Windows et le publie comme Release GitHub à chaque étiquette de version
+# (v1.2.3), créée par `npm run release`. Les apps installées la récupèrent toutes seules.
+name: Publier une version
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # créer la Release et y déposer l'installeur
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Jeton en lecture seule qui permet à l'app de lire les Releases de ce dépôt privé.
+      # Il vient du secret UPDATE_TOKEN et n'existe que dans l'installeur.
+      - name: Ajouter le jeton de mise à jour
+        shell: bash
+        env:
+          UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+        run: |
+          if [ -z "$UPDATE_TOKEN" ]; then echo "::error::Secret UPDATE_TOKEN manquant"; exit 1; fi
+          printf '{"token":"%s"}' "$UPDATE_TOKEN" > src/update-token.json
+
+      - name: Construire et publier
+        run: npx electron-builder --win nsis --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

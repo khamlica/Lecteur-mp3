@@ -1,2 +1,4 @@
 node_modules/
 dist/
+# Jeton de lecture des mises à jour : ajouté à la build par GitHub Actions, jamais committé
+src/update-token.json

@@ -1,0 +1,15 @@
+Icône « feu d'artifice » (Hanabi Player, première version)
+
+- icon.svg       : source vectorielle (ciel de nuit, étoiles, feu d'artifice style craie), 512x512
+- icon.png       : rendu final 512x512, coins arrondis (18 %)
+- render-icon.js : script de rendu SVG -> PNG via Chromium (Electron)
+
+Régénérer le PNG (depuis un projet où electron est installé) :
+  electron render-icon.js icon.svg icon.png 512 0.18
+    arguments : <entrée.svg> <sortie.png> <taille en px> <rayon des coins, fraction de la taille>
+  (sous Git Bash, faire d'abord : unset ELECTRON_RUN_AS_NODE)
+
+Le rendu passe par Chromium car les filtres SVG (feTurbulence, feDisplacementMap)
+qui donnent l'effet craie et les nuages ne sont pas gérés par la plupart des convertisseurs.
+
+Pour electron-builder : "win": { "icon": "chemin/vers/icon.png" } (PNG 256x256 minimum).

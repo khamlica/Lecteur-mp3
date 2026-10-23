@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#02050f"/>
+      <stop offset="0.45" stop-color="#060f2a"/>
+      <stop offset="0.74" stop-color="#091735"/>
+      <stop offset="1" stop-color="#0d1f45"/>
+    </linearGradient>
+    <radialGradient id="dusk" cx="0.6" cy="1" r="0.7" gradientTransform="translate(0.6 1) scale(1 0.5) translate(-0.6 -1)">
+      <stop offset="0" stop-color="#7f9bd2" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#7f9bd2" stop-opacity="0"/>
+    </radialGradient>
+    <!-- répartition verticale des nuages : denses au milieu du ciel, plus légers en bas -->
+    <linearGradient id="cloud-band" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.35"/>
+      <stop offset="0.35" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.75" stop-color="#fff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0.45"/>
+    </linearGradient>
+    <!-- nuages : masses sombres, puis bords supérieurs éclairés par la lueur du crépuscule -->
+    <filter id="clouds" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.007 0.018" numOctaves="5" seed="11" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0.012  0 0 0 0 0.035  0 0 0 0 0.11  2.6 0 0 0 -1.05" result="mass"/>
+      <feOffset in="noise" dy="-5" result="lifted"/>
+      <feColorMatrix in="lifted" type="matrix" values="0 0 0 0 0.09  0 0 0 0 0.14  0 0 0 0 0.3  1.8 0 0 0 -1.25" result="lit"/>
+      <feComposite in="lit" in2="mass" operator="out" result="rim"/>
+      <feGaussianBlur in="rim" stdDeviation="1.2" result="rimSoft"/>
+      <feMerge result="all"><feMergeNode in="mass"/><feMergeNode in="rimSoft"/></feMerge>
+      <feComposite in="all" in2="SourceGraphic" operator="in"/>
+    </filter>
+    <radialGradient id="flash" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="chalk" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="3"/>
+      <feDisplacementMap in="SourceGraphic" scale="7"/>
+    </filter>
+    <filter id="chalk-fine" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.12" numOctaves="2" seed="5"/>
+      <feDisplacementMap in="SourceGraphic" scale="4"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <rect width="512" height="512" fill="url(#dusk)"/>
+  <rect width="512" height="512" fill="url(#cloud-band)" filter="url(#clouds)" opacity="0.5"/>
+
+  <g fill="#fff" stroke="#fff" stroke-linejoin="round" filter="url(#chalk-fine)">
+    <path d="M108.4 69.5C112.5 87.1 112.7 87.1 121.3 83.5C107.2 86.1 107.2 87.1 109.4 96.8C107.9 81.6 107.5 81.1 96.2 84.5C113.6 81.5 112.3 80.8 108.4 69.5Z" stroke-width="1.3" opacity="0.8"/>
+    <path d="M437 85.6C437.7 98.2 438.2 97.7 446 96.3C434.1 98 433.5 97.8 435 107.1C433.8 93.3 433.8 94.4 426.8 96.3C438.2 93.9 437.8 94.1 437 85.6Z" stroke-width="1" opacity="0.65"/>
+    <circle cx="250" cy="52" r="2.5" opacity="0.7"/>
+    <circle cx="40" cy="190" r="2" opacity="0.6"/>
+    <circle cx="470" cy="210" r="2.5" opacity="0.5"/>
+    <circle cx="186" cy="30" r="1.5" opacity="0.55"/>
+    <circle cx="80" cy="440" r="2" opacity="0.45"/>
+  </g>
+
+  <!-- feu d'artifice au centre -->
+  <circle cx="256" cy="256" r="175" fill="url(#flash)"/>
+  <g fill="#fff" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" filter="url(#chalk)">
+    <path d="M291.2 263.4L404.2 287.2M428.7 292.3L445.6 295.9M310 289.7L364.8 323.8M387.2 337.8L397.7 344.4M280.6 284.6L359.2 376.3M378.2 398.4L389 411.1M275.1 305.2L304.6 381.1M254.6 303.2L251.3 418.5M239 302.6L212 376.3M219.3 296.7L150.2 373.4M220.9 277.2L145.3 322.9M124.1 335.7L112.3 342.8M200.5 264.4L90.7 281.2M55.8 286.5L46.1 287.9M206.9 247.7L135 235.6M96.5 229.1L85 227.2M224.3 237.2L124.2 178M229.6 224.1L178 161.6M237 198.4L203.6 96.9M257.2 219.9L260.3 124.1M260.9 106.2L261.3 94.3M268.9 216.5L302.6 113M286.8 217.6L338.5 153.3M311.7 224.9L391.4 180.5M304.1 246.5L379.7 231.5" stroke-width="6" opacity="0.95"/>
+    <path d="M230.7 207.9C275.3 261.1 272.5 263.2 310.7 225.4C251.7 270.3 251.4 272.6 278.7 314.6C237.8 252.2 239.7 247.8 201.4 286.2C261.1 243.3 260.5 236.9 230.7 207.9Z" stroke-width="4" opacity="1"/>
+  </g>
+</svg>

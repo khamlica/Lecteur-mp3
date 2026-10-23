@@ -111,8 +111,42 @@ header {
   color: var(--fg-faint);
 }
 
-#file-name {
+#file-row {
   margin-top: -4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.link {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-dim);
+  font-family: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--fg);
+}
+
+.link:focus-visible {
+  outline: 1px solid var(--accent);
+}
+
+.link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#file-name {
+  flex: 1;
+  min-width: 0;
   font-size: 10.5px;
   color: var(--fg-faint);
   white-space: nowrap;

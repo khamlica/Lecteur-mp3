@@ -213,6 +213,11 @@ function createSound(audio) {
       return ctx;
     },
 
+    // Effet en cours (clé de SOUND_EFFECTS)
+    effect() {
+      return name;
+    },
+
     output() {
       ensure();
       return output;

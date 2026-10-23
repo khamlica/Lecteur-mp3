@@ -1,0 +1,204 @@
+/* Effets visuels d'ambiance, pilotés par effects.js (voir applyFx) : partagés par le lecteur
+   et par les aperçus de la fenêtre de personnalisation.
+
+   Une zone par élément de la musique, pour que chacun vive à sa place sans masquer les autres :
+     la basse (kick, 808)      la pochette « saute » ;
+     la voix                   un large halo qui entre par la droite (la gauche est réservée au rythme) ;
+     les percussions           la pochette s'éclaire brièvement sur chaque coup ;
+     la mélodie de fond        le haut et le bas du lecteur, d'une lueur douce (pistes séparées) ;
+     l'énergie                 la teinte du fond ; la basse longue et lourde, tout le contour qui s'illumine.
+
+   Variables posées sur l'élément .fx-surface :
+     --fx-pulse     coup de basse, de 0 à 1 (accent 1, ordinaire 0,8, léger 0,6)
+     --fx-perc-hit  coup de percussion (caisse claire, clap…), de 0 à 1
+     --fx-pulse-glow (1 à 0,6) : lueurs réduites au-delà de 5 coups/s (photosensibilité)
+     --fx-pressure  basse longue et lourde, de 0 à 1 (le contour)
+     --fx-glow      halo : énergie du passage, de 0 à 1
+     --fx-color     couleur principale (pulsation)
+     --fx-halo-color  couleur du halo, selon la brillance du son
+     --fx-accent    couleur de la pression
+     --fx-flicker-a/b/c  vacillement lent, de 0 à 1 (braises)
+     --fx-origin    abscisse du centre de la pochette, d'où part l'éclat des braises
+     --fx-voice     halo de la voix (à droite), de 0 à 1 ; --fx-voice-reach sa taille ;
+                    --fx-note-color sa couleur */
+
+.fx-surface {
+  position: relative;
+  isolation: isolate;
+  --fx-pulse: 0;
+  --fx-pulse-glow: 1;
+  --fx-perc-hit: 0;
+  --fx-cover-edge: 76px; /* bord droit de la pochette : le halo des notes graves sort juste à côté */
+  --fx-pressure: 0;
+  --fx-glow: 0;
+  --fx-color: 140 160 255;
+  --fx-halo-color: 140 160 255;
+  --fx-accent: 140 160 255;
+  --fx-flicker-a: 0.5;
+  --fx-flicker-b: 0.5;
+  --fx-flicker-c: 0.5;
+  --fx-origin: 44px;
+  --fx-voice: 0;
+  --fx-voice-reach: 55%;
+  --fx-note-color: 255 255 255;
+  --fx-cover-color: 255 255 255;
+  --fx-melody: 0;
+  --fx-melody-color: 255 255 255;
+  --fx-note-alpha: 0.7;
+  --fx-bass-band: 16px;   /* épaisseur de la bande lumineuse le long du bord */
+  --fx-bass-alpha: 1;
+  --fx-bass-flicker: 1;
+}
+
+/* Basse tenue : tout le contour du lecteur s'illumine, un liseré et sa lueur vers l'intérieur, dans la
+   couleur chaude de la pochette, au rythme de l'ondulation de la basse (élément .fx-bass dans la surface) */
+.fx-bass {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-app-region: initial;
+  --fx-bass-a: calc(var(--fx-pressure) * var(--fx-bass-alpha) * var(--fx-bass-flicker));
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--fx-accent) / min(0.9, calc(var(--fx-bass-a) * 0.9))),
+    inset 0 0 calc(var(--fx-bass-band) * 0.5) rgb(var(--fx-accent) / min(0.6, calc(var(--fx-bass-a) * 0.6)));
+}
+
+/* Voix : un large halo doux qui entre par la droite à chaque note (la gauche est réservée au rythme)
+   (élément .fx-notes dans la surface) */
+.fx-notes {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-app-region: initial;
+  background:
+    radial-gradient(var(--fx-voice-reach) 95% at 100% 50%,
+      rgb(var(--fx-note-color) / calc(var(--fx-voice) * var(--fx-note-alpha))), transparent);
+}
+
+/* Mélodie de fond (instruments, sur les pistes séparées) : une lueur douce entre par le haut et le bas
+   du lecteur à chacune de ses notes, plus profonde quand elle est sombre, plus claire quand elle brille
+   (élément .fx-melody dans la surface) */
+.fx-melody {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-app-region: initial;
+  box-shadow:
+    inset 0 calc(6px + var(--fx-melody) * 8px) 14px -8px rgb(var(--fx-melody-color) / min(0.5, calc(var(--fx-melody) * 0.5))),
+    inset 0 calc(-6px - var(--fx-melody) * 8px) 14px -8px rgb(var(--fx-melody-color) / min(0.5, calc(var(--fx-melody) * 0.5)));
+}
+
+.fx-surface[data-fx-theme="mono"] .fx-melody {
+  opacity: 0.6;
+}
+
+/* Calques des effets, sous le contenu : le halo d'énergie au fond, puis la basse longue et la voix */
+.fx-surface::before,
+.fx-surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
+  /* Sinon ces calques héritent de la zone de déplacement du lecteur et, le couvrant entièrement,
+     annulent les « no-drag » des boutons : plus aucun clic ne passerait. */
+  -webkit-app-region: initial;
+}
+
+/* La pochette porte le rythme : elle « saute » sur la basse (kick, 808) en s'entourant d'une lueur, et
+   s'éclaire sur les percussions (caisse claire, clap…), comme rétroéclairée : ses propres couleurs
+   deviennent plus lumineuses et plus vives et une lueur de sa couleur monte derrière elle, sans voile
+   blanc ; l'énergie, elle, teinte le fond */
+.fx-cover {
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.35),
+    0 0 calc(var(--fx-perc-hit) * 18px) calc(var(--fx-perc-hit) * 4px) rgb(var(--fx-cover-color) / min(0.9, calc(var(--fx-perc-hit) * 0.9))),
+    0 0 calc(var(--fx-pulse) * 14px) calc(var(--fx-pulse) * 2px) rgb(var(--fx-color) / min(0.85, calc(var(--fx-pulse) * 0.85)));
+  transform: scale(calc(1 + var(--fx-pulse) * 0.06));
+  filter: brightness(calc(1 + var(--fx-perc-hit) * 0.3)) saturate(calc(1 + var(--fx-perc-hit) * 0.35));
+  will-change: transform;
+}
+
+/* ---------- Aurore : les couleurs de la pochette, lumière douce ---------- */
+
+.fx-surface::after {
+  z-index: -2;
+}
+
+/* Halo : le lecteur entier se teinte, uniformément (les bords appartiennent aux notes et à la basse). */
+.fx-surface[data-fx-theme="aurora"]::before {
+  background: rgb(var(--fx-halo-color) / calc(var(--fx-glow) * 0.28));
+}
+
+/* ---------- Néon : synthwave, net et saturé ---------- */
+
+/* Halo : vignette dont la teinte glisse d'une couleur à l'autre selon la brillance. */
+.fx-surface[data-fx-theme="neon"]::before {
+  background:
+    radial-gradient(farthest-corner at 50% 50%, transparent 35%, rgb(var(--fx-halo-color) / calc(var(--fx-glow) * 0.42)));
+}
+
+/* Notes : plus vives, comme des projecteurs néon sur les côtés ;
+   basse : un tube de néon fin et net tout autour du cadre */
+.fx-surface[data-fx-theme="neon"] {
+  --fx-note-alpha: 0.65;
+  --fx-bass-band: 4px;
+  --fx-bass-alpha: 1;
+}
+
+/* ---------- Braise : chaud et organique ---------- */
+
+/* Basse : le contour rougeoie comme une braise, en vacillant.
+   Halo : du rouge profond (son sombre) à l'ambre (son brillant). */
+.fx-surface[data-fx-theme="ember"] {
+  --fx-bass-flicker: calc(0.6 + 0.4 * var(--fx-flicker-a));
+}
+
+.fx-surface[data-fx-theme="ember"]::before {
+  background:
+    radial-gradient(120% 180% at 50% 50%, transparent 35%, rgb(var(--fx-halo-color) / calc(var(--fx-glow) * 0.55))),
+    linear-gradient(90deg,
+      rgb(var(--fx-halo-color) / calc(var(--fx-glow) * 0.38)),
+      rgb(var(--fx-halo-color) / calc(var(--fx-glow) * 0.16)) 50%,
+      rgb(var(--fx-halo-color) / calc(var(--fx-glow) * 0.28)));
+}
+
+/* ---------- Monochrome : lumière blanche, très discrète ---------- */
+
+.fx-surface[data-fx-theme="mono"] {
+  --fx-note-alpha: 0.25;
+  --fx-bass-alpha: 0.45;
+}
+
+.fx-surface[data-fx-theme="mono"]::before {
+  background:
+    radial-gradient(120% 180% at 50% 50%, rgb(255 255 255 / calc(var(--fx-glow) * 0.03)), rgb(255 255 255 / calc(var(--fx-glow) * 0.2)));
+}
+
+/* ---------- Lisibilité et accessibilité ---------- */
+
+/* Le texte et les icônes restent lisibles quand les effets éclairent la barre */
+.fx-surface :is(#title, #artist, .time) {
+  text-shadow: 0 0 4px rgb(0 0 0 / 0.55);
+}
+
+.fx-surface .btn:not(.play) svg {
+  filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.5));
+}
+
+/* Mouvements réduits (réglage Windows) : la pochette ne saute plus (la basse n'y garde que sa lueur,
+   les percussions l'éclairent toujours) ; les coups deviennent des fondus (effects.js) ; les halos de la
+   voix gardent une taille fixe au lieu de s'étendre */
+@media (prefers-reduced-motion: reduce) {
+  .fx-cover {
+    transform: none;
+  }
+
+  .fx-surface {
+    --fx-voice-reach: 50% !important;
+  }
+
+}

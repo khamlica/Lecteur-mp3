@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>Personnaliser les effets</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="editor.css">
+  <link rel="stylesheet" href="fx-themes.css">
+  <link rel="stylesheet" href="fx-panel.css">
+</head>
+<body>
+  <svg class="sprite" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  </svg>
+
+  <div id="panel">
+    <header>
+      <span>Personnaliser les effets</span>
+      <button class="btn small" id="close" title="Fermer (Échap)"><svg><use href="#i-close"/></svg></button>
+    </header>
+
+    <section>
+      <h2>Thème</h2>
+      <div id="themes"></div>
+    </section>
+
+    <section id="color-section">
+      <h2>Couleur</h2>
+      <div class="color-row">
+        <div class="segmented" id="color-mode">
+          <button data-mode="theme">Du thème</button>
+          <button data-mode="cover">Pochette</button>
+          <button data-mode="custom">Libre</button>
+        </div>
+        <input type="color" id="custom-color" title="Choisir une couleur">
+      </div>
+      <div class="hint" id="color-hint"></div>
+    </section>
+
+    <section>
+      <h2>Effets</h2>
+      <div class="effect" data-effect="pulse">
+        <label><input type="checkbox"><span>Rythme <small>la pochette : saute sur la basse, s'éclaire sur la batterie</small></span></label>
+        <input type="range" min="0" max="150" step="5"><output></output>
+      </div>
+      <div class="effect" data-effect="pressure">
+        <label><input type="checkbox"><span>Basse tenue <small>tout le contour</small></span></label>
+        <input type="range" min="0" max="150" step="5"><output></output>
+      </div>
+      <div class="effect" data-effect="halo">
+        <label><input type="checkbox"><span>Énergie <small>teinte de fond</small></span></label>
+        <input type="range" min="0" max="150" step="5"><output></output>
+      </div>
+      <div class="effect" data-effect="notes">
+        <label><input type="checkbox"><span>Voix et mélodie <small>voix : à droite · mélodie : haut et bas</small></span></label>
+        <input type="range" min="0" max="150" step="5"><output></output>
+      </div>
+    </section>
+
+    <section>
+      <h2>Synchronisation</h2>
+      <div class="sync">
+        <input type="range" id="sync" min="-200" max="200" step="10"><output id="sync-value"></output>
+      </div>
+      <div class="hint">Les effets sont calés automatiquement sur le son. Si tu les vois encore en retard
+        (casque Bluetooth…), avance-les ; s'ils arrivent trop tôt, retarde-les.
+        <span id="sync-device"></span></div>
+    </section>
+
+    <footer>
+      <div id="status"></div>
+      <button class="action" id="reset">Réinitialiser</button>
+      <button class="action primary" id="done">Terminé</button>
+    </footer>
+  </div>
+
+  <script src="effects.js"></script>
+  <script src="fx-panel.js"></script>
+</body>
+</html>

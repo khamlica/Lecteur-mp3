@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' file:">
-  <title>Lecteur MP3</title>
+  <title>Hanabi Player</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="fx-themes.css">
 </head>
 <body>
   <svg class="sprite" xmlns="http://www.w3.org/2000/svg">
@@ -25,8 +26,11 @@
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></symbol>
   </svg>
 
-  <div id="bar">
-    <div id="cover" title="Modifier le titre, l'artiste et la pochette">
+  <div id="bar" class="fx-surface" data-fx-theme="aurora">
+    <div class="fx-bass"></div>
+    <div class="fx-notes"></div>
+    <div class="fx-melody"></div>
+    <div id="cover" class="fx-cover" title="Modifier le titre, l'artiste et la pochette">
       <img id="cover-img" alt="" hidden>
       <svg class="edit"><use href="#i-edit"/></svg>
     </div>
@@ -34,7 +38,7 @@
     <div id="body">
       <div class="row">
         <div id="info">
-          <div id="title">Lecteur MP3</div>
+          <div id="title">Hanabi Player</div>
           <div id="artist"></div>
         </div>
 

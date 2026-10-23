@@ -9,6 +9,7 @@ const ui = {
   fileName: $('file-name'),
   status: $('status'),
   save: $('save'),
+  lookup: $('lookup'),
 };
 
 let original = { title: '', artist: '' }; // valeurs lues dans le fichier
@@ -76,6 +77,23 @@ async function save() {
   editor.close();
 }
 
+// Remplit les champs avec le morceau trouvé en ligne ; rien n'est écrit avant « Enregistrer ».
+async function lookup() {
+  if (saving || ui.lookup.disabled) return;
+  ui.lookup.disabled = true;
+  setStatus('Recherche…');
+  const found = await editor.lookup({ title: ui.title.value.trim(), artist: ui.artist.value.trim() });
+  ui.lookup.disabled = false;
+  if (found.error) return setStatus(found.error, true);
+  ui.title.value = found.title;
+  ui.artist.value = found.artist;
+  if (found.cover) {
+    newCover = found.cover;
+    showCover(URL.createObjectURL(new Blob([newCover], { type: 'image/jpeg' })));
+  }
+  setStatus('Trouvé : vérifier puis enregistrer');
+}
+
 // ---------- Interface ----------
 
 ui.art.addEventListener('click', () => ui.artFile.click());
@@ -109,6 +127,7 @@ document.addEventListener('drop', (e) => {
 });
 
 $('save').addEventListener('click', save);
+ui.lookup.addEventListener('click', lookup);
 $('cancel').addEventListener('click', () => editor.close());
 $('close').addEventListener('click', () => editor.close());
 

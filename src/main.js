@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, screen, globalShortcut, clipboard, net } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const v8 = require('v8');
 const { spawn, execFile } = require('child_process');
 const { pathToFileURL } = require('url');
 
@@ -23,7 +25,17 @@ const DEFAULTS = {
   fxPulse: true,           // le lecteur pulse sur les basses
   fxPressure: true,        // lumière qui monte du bas sur les basses longues et lourdes
   fxHalo: true,            // halo lumineux sur tout le lecteur
-  fxIntensity: 'normal',   // 'low' | 'normal' | 'high'
+  fxNotes: true,           // halo à gauche ou à droite sur les notes (piano, cordes, voix…)
+  fxPulseLevel: 1,         // intensité de chaque effet, de 0 à 1,5
+  fxPressureLevel: 1,
+  fxHaloLevel: 1,
+  fxNotesLevel: 1,
+  fxSyncMs: 0,             // avance (+) ou retard (−) des effets sur le son, réglée à l'oreille
+  fxSyncByDevice: {},      // la même, retenue pour chaque sortie audio (un casque Bluetooth a son propre retard)
+  fxTheme: 'aurora',       // 'aurora' | 'neon' | 'ember' | 'mono' (voir FX_THEMES)
+  fxColorMode: 'theme',    // 'theme' | 'cover' | 'custom'
+  fxCustomColor: '#ff7a3d',
+  fxSource: 'mix',         // méthode d'analyse des effets : 'mix' (morceau entier) | 'stems' (instruments séparés à la demande)
   soundFx: 'none',         // effet sonore à l'écoute (voir SOUND_EFFECTS)
 };
 
@@ -38,10 +50,32 @@ let playback = { playing: false, title: '' };
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 
+// L'app s'appelait « Lecteur MP3 » et ses données étaient rangées sous ce nom :
+// au premier lancement sous le nouveau nom, on reprend ses réglages et yt-dlp.
+function migrateOldData() {
+  const old = path.join(app.getPath('appData'), 'Lecteur MP3');
+  if (fs.existsSync(settingsFile()) || !fs.existsSync(path.join(old, 'settings.json'))) return;
+  try {
+    fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
+    fs.copyFileSync(path.join(old, 'settings.json'), settingsFile());
+    const bin = path.join(old, 'bin');
+    if (fs.existsSync(bin)) fs.cpSync(bin, path.join(app.getPath('userData'), 'bin'), { recursive: true });
+  } catch (err) {
+    console.warn('Reprise des anciens réglages impossible :', err.message);
+  }
+}
+
 function loadSettings() {
   try {
     const raw = fs.readFileSync(settingsFile(), 'utf8').replace(/^﻿/, '');
-    settings = { ...DEFAULTS, ...JSON.parse(raw) };
+    const saved = JSON.parse(raw);
+    settings = { ...DEFAULTS, ...saved };
+    // Ancienne intensité unique (douce / normale / forte) → intensité de chaque effet
+    if (saved.fxIntensity && saved.fxPulseLevel === undefined) {
+      const level = { low: 0.6, high: 1.5 }[saved.fxIntensity] || 1;
+      settings.fxPulseLevel = settings.fxPressureLevel = settings.fxHaloLevel = settings.fxNotesLevel = level;
+    }
+    delete settings.fxIntensity;
   } catch {
     settings = { ...DEFAULTS };
   }
@@ -112,7 +146,7 @@ async function readMetadata(file) {
 // et une version figée dans l'installeur cesserait vite de fonctionner.
 const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
 const ytDlpPath = () => path.join(app.getPath('userData'), 'bin', 'yt-dlp.exe');
-const ytTempDir = () => path.join(app.getPath('temp'), 'lecteur-mp3-youtube');
+const ytTempDir = () => path.join(app.getPath('temp'), 'hanabi-player-youtube');
 // Une fois l'app installée, un exécutable ne peut pas être lancé depuis l'archive asar.
 const FFMPEG_PATH = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
 
@@ -197,7 +231,9 @@ async function convertYoutube(url) {
       '--quiet', '--no-warnings', '--progress', '--newline',
       '--progress-template', 'download:P %(progress._percent_str)s',
       '--print', 'before_dl:T %(title)s',
-      '--print', 'after_move:F %(id)s %(filepath)s',
+      // Infos du fichier obtenu, pour le nettoyer et retrouver le morceau (track et artist ne sont
+      // connus que si YouTube a identifié la musique)
+      '--print', 'after_move:F %(.{id,filepath,title,track,artist,channel})j',
       url,
     ];
     const onLine = (line) => {
@@ -209,8 +245,12 @@ async function convertYoutube(url) {
         if (isNaN(pct)) return;
         send('yt-progress', { status: pct >= 100 ? 'Finalisation…' : `Téléchargement… ${Math.floor(pct)} %` });
       } else if (line.startsWith('F ')) {
-        const space = value.indexOf(' '); // identifiant de la vidéo, puis chemin du fichier
-        files.push({ id: value.slice(0, space), path: value.slice(space + 1) });
+        try {
+          const info = JSON.parse(value);
+          files.push({ ...info, path: info.filepath });
+        } catch {
+          // ligne illisible : le fichier est quand même dans le dossier, seulement pas nettoyé
+        }
       }
     };
 
@@ -229,6 +269,8 @@ async function convertYoutube(url) {
       await trimNonMusic(file.path, file.id);
       await trimSilence(file.path);
     }
+    send('yt-progress', { status: 'Recherche du titre et de la pochette…' });
+    for (const file of files) await tagDownload(file);
 
     const tracks = await scanFolder(folder);
     const wanted = path.resolve(files[0].path).toLowerCase();
@@ -297,7 +339,7 @@ async function currentCover(file) {
 // et trim ({ start, end } en secondes, pour ne garder que cette partie) : ce qui est absent
 // reste tel quel, comme tous les autres tags.
 async function writeTags(file, { title, artist, cover, trim }) {
-  const base = path.join(app.getPath('temp'), `lecteur-mp3-tags-${Date.now()}`);
+  const base = path.join(app.getPath('temp'), `hanabi-player-tags-${Date.now()}`);
   const tmp = `${file}.tags.tmp`;
   const ogg = /\.(opus|ogg)$/i.test(file);
   const mp3 = /\.mp3$/i.test(file);
@@ -448,6 +490,188 @@ async function trimNonMusic(file, videoId) {
   }
 }
 
+// ---------- Titre, artiste et pochette du morceau ----------
+
+// Le catalogue iTunes est interrogeable sans compte ni clé et fournit des pochettes carrées.
+// Tout ce qui suit est facultatif : sans Internet, ou si le service ne répond pas ou ne trouve
+// rien de sûr, le fichier garde simplement les infos de la vidéo, nettoyées.
+const ITUNES_API = 'https://itunes.apple.com/search';
+const LOOKUP_TIMEOUT = 5000;
+const COVER_SIZE = 600; // comme les pochettes choisies à la main (cover.js)
+// Écart de durée accepté entre le fichier et le morceau trouvé (s) : un clip est souvent plus long
+// que le morceau (intro, fin) même après nettoyage, presque jamais plus court.
+const SHORTER_TOLERANCE = 6;
+const LONGER_TOLERANCE = 45;
+const CLOSE_DURATION = 8; // en dessous, c'est sûrement la même version
+
+// Mentions qui ne font pas partie du nom du morceau
+const NOISE = /\b(official|officiel(le)?|music\s+video|lyric\s+video|video|vidéo|clip|mv|m\/v|audio|lyrics?|paroles|visuali[sz]er|hd|hq|4k|full\s+ver(sion)?)\b/i;
+const TRAILING_NOISE = /[\s\-–—|:]*\b(official|officiel(le)?)?\s*(music\s+video|lyric\s+video|video|vidéo|clip|mv|m\/v|audio|lyrics|visuali[sz]er|hd|4k)\s*$/i;
+// Versions différentes du morceau original : on ne les retient que si la vidéo les mentionne aussi.
+const VARIANTS = /\b(live|remix|mix|acoustic|instrumental|inst|karaoke|cover|piano|music box|sped up|slowed|nightcore|8d|lofi|demo|orchestra)\b/i;
+
+// Minuscules, sans accents ni ponctuation, entouré d'espaces pour chercher des mots entiers.
+const words = (s) => ` ${(s || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
+const mentions = (text, name) => words(name).trim() !== '' && text.includes(words(name));
+
+const stripBrackets = (s) => s.replace(/\s*(\([^)]*\)|\[[^\]]*\]|【[^】]*】)/g, '').trim();
+
+// Nom de chaîne qui désigne clairement l'artiste (« ArtisteVEVO », « Artiste - Topic »), ou null.
+function channelArtist(channel) {
+  const name = (channel || '').replace(/\s*-\s*topic$|vevo$|\s+official$/i, '').trim();
+  return name && name !== channel ? name : null;
+}
+
+// Devine l'artiste et le titre à partir du titre d'une vidéo. `sure` : l'artiste et le titre
+// étaient clairement séparés (« Artiste - Titre », « Artiste 'Titre' »).
+function guessFromTitle(raw, channel) {
+  let t = raw
+    .replace(/\s*(\[[^\]]*\]|【[^】]*】)\s*/g, ' ')
+    // Parenthèses de mentions (« (Official Video) ») ou de traduction (« IU(아이유) ») ;
+    // celles qui comptent, comme « (feat. …) » ou « (Remix) », restent.
+    .replace(/\s*\(([^)]*)\)/g, (m, inside) => (NOISE.test(inside) || !/\p{Script=Latin}/u.test(inside) ? '' : m))
+    .replace(/\s+/g, ' ').trim();
+  while (TRAILING_NOISE.test(t)) t = t.replace(TRAILING_NOISE, '').trim();
+
+  const quoted = t.match(/^(.+?)\s*['‘’"“”「『](.+?)['‘’"“”」』]\s*(.*)$/);
+  if (quoted) return { artist: quoted[1].trim(), title: `${quoted[2]} ${quoted[3]}`.trim(), sure: true };
+  const parts = t.split(/\s[-–—_|]\s/);
+  if (parts.length >= 2) return { artist: parts[0].trim(), title: parts.slice(1).join(' - ').trim(), sure: true };
+  return { artist: channelArtist(channel), title: t || raw, sure: false };
+}
+
+async function audioDuration(file) {
+  try {
+    mm ??= await import('music-metadata');
+    return (await mm.parseFile(file, { duration: true })).format.duration || null;
+  } catch {
+    return null;
+  }
+}
+
+async function searchItunes(term) {
+  const query = new URLSearchParams({ term, media: 'music', entity: 'song', limit: '15' });
+  const res = await net.fetch(`${ITUNES_API}?${query}`, { signal: AbortSignal.timeout(LOOKUP_TIMEOUT) });
+  if (!res.ok) return [];
+  return (await res.json()).results || [];
+}
+
+// Résultat qui correspond vraiment au morceau : son artiste et son titre apparaissent dans `text`
+// (titre de la vidéo, chaîne…), ce n'est pas une autre version, et la durée concorde.
+function bestMatch(results, text, duration) {
+  const matches = results.filter((r) => {
+    if (r.kind !== 'song' || !r.trackName || !r.artistName) return false;
+    const title = stripBrackets(r.trackName.replace(/\s+-\s+.*$/, ''));
+    if (!mentions(text, title)) return false;
+    if (!r.artistName.split(/\s*(?:,|&|\band\b|\bx\b|\bfeat\.?|\bft\.?|\bwith\b)\s*/i).some((a) => mentions(text, a))) return false;
+    const variant = r.trackName.match(new RegExp(VARIANTS.source, 'gi')) || [];
+    if (variant.some((v) => !mentions(text, v))) return false;
+    if (!duration || !r.trackTimeMillis) return true;
+    const diff = duration - r.trackTimeMillis / 1000;
+    return diff >= -SHORTER_TOLERANCE && diff <= LONGER_TOLERANCE;
+  });
+  // Dans l'ordre de pertinence d'iTunes, en préférant une durée presque identique
+  const close = (r) => duration && r.trackTimeMillis && Math.abs(duration - r.trackTimeMillis / 1000) <= CLOSE_DURATION;
+  return matches.find(close) || matches[0] || null;
+}
+
+async function fetchCover(url) {
+  try {
+    const res = await net.fetch(url, { signal: AbortSignal.timeout(LOOKUP_TIMEOUT) });
+    if (!res.ok) return null;
+    const image = nativeImage.createFromBuffer(Buffer.from(await res.arrayBuffer()));
+    return image.isEmpty() ? null : image.toJPEG(85);
+  } catch {
+    return null;
+  }
+}
+
+// Cherche le morceau en ligne : { title, artist, cover (JPEG ou null) }, ou null si rien de sûr
+// n'a été trouvé, si le service ne répond pas ou s'il n'y a pas de connexion. Ne lève jamais d'erreur.
+async function lookupTrack({ text, artist, title, duration }) {
+  if (!net.isOnline() || !title) return null;
+  const terms = [...new Set([artist && `${stripBrackets(artist)} ${stripBrackets(title)}`, stripBrackets(title)])]
+    .filter((t) => t && t.trim());
+  for (const term of terms) {
+    try {
+      const found = bestMatch(await searchItunes(term), words(text), duration);
+      if (!found) continue;
+      const cover = found.artworkUrl100
+        ? await fetchCover(found.artworkUrl100.replace(/\/\d+x\d+bb\./, `/${COVER_SIZE}x${COVER_SIZE}bb.`))
+        : null;
+      return { title: found.trackName, artist: found.artistName, cover };
+    } catch (err) {
+      console.warn('Recherche du morceau impossible :', err.message);
+      return null; // hors délai ou réponse illisible : inutile d'insister
+    }
+  }
+  return null;
+}
+
+// Miniature de la vidéo recadrée en carré centré, comme une pochette, ou null si inutile.
+async function squareThumbnail(file) {
+  const pic = await currentCover(file);
+  if (!pic) return null;
+  const image = nativeImage.createFromBuffer(Buffer.from(pic.data));
+  const { width, height } = image.getSize();
+  if (!width || width === height) return null;
+  const side = Math.min(width, height);
+  const size = Math.min(side, COVER_SIZE);
+  return image
+    .crop({ x: Math.round((width - side) / 2), y: Math.round((height - side) / 2), width: side, height: side })
+    .resize({ width: size, height: size, quality: 'best' })
+    .toJPEG(85);
+}
+
+// Après un téléchargement : vrai titre, artiste et pochette si le morceau est trouvé, sinon titre
+// de la vidéo débarrassé de ses mentions et miniature recadrée. En cas d'échec, le fichier reste tel quel.
+async function tagDownload(file) {
+  try {
+    const guess = file.track
+      ? { artist: file.artist, title: file.track, sure: true }
+      : guessFromTitle(file.title || '', file.channel);
+    const found = await lookupTrack({
+      text: [file.title, file.channel, file.track, file.artist].join(' '),
+      artist: guess.artist,
+      title: guess.title,
+      duration: await audioDuration(file.path),
+    });
+    const changes = {};
+    if (found) {
+      changes.title = found.title;
+      changes.artist = found.artist;
+      if (found.cover) changes.cover = found.cover;
+    } else if (!file.track) {
+      // YouTube n'a rien fourni : yt-dlp a mis le titre de la vidéo et le nom de la chaîne.
+      if (guess.title !== file.title) changes.title = guess.title;
+      if (guess.artist && (guess.sure || !file.artist)) changes.artist = guess.artist;
+    }
+    if (!changes.cover) {
+      const thumb = await squareThumbnail(file.path);
+      if (thumb) changes.cover = thumb;
+    }
+    if (Object.keys(changes).length) await writeTags(file.path, changes);
+  } catch (err) {
+    console.warn('Infos du morceau non complétées :', err.message);
+  }
+}
+
+// Recherche lancée depuis la fenêtre d'édition, à partir de ce qui y est saisi.
+async function lookupForEditor(file, { title, artist }) {
+  const name = path.basename(file, path.extname(file));
+  const guess = title && artist ? { title, artist } : guessFromTitle(title || name, null);
+  if (!guess.artist && artist) guess.artist = artist;
+  if (!net.isOnline()) return { error: 'Pas de connexion Internet' };
+  const found = await lookupTrack({
+    text: [title, artist, name].join(' '),
+    artist: guess.artist,
+    title: guess.title,
+    duration: await audioDuration(file),
+  });
+  return found || { error: 'Morceau introuvable' };
+}
+
 // Le fichier peut être en cours de lecture : c'est l'interface du lecteur qui le libère le temps
 // de l'écriture puis reprend la lecture (saveTags dans renderer.js). On passe donc par elle.
 const tagRequests = new Map();
@@ -469,14 +693,16 @@ let editor = null;
 let editorFile = null;
 
 // Au-dessus du lecteur si la place le permet, sinon en dessous.
-function editorBounds() {
+function besidePlayer(width, height) {
   const p = win.getBounds();
   const a = screen.getDisplayMatching(p).workArea;
-  let y = p.y - EDITOR_HEIGHT - 8;
-  if (y < a.y) y = Math.min(p.y + p.height + 8, a.y + a.height - EDITOR_HEIGHT);
-  const x = Math.max(a.x, Math.min(p.x + p.width - EDITOR_WIDTH, a.x + a.width - EDITOR_WIDTH));
-  return { x, y, width: EDITOR_WIDTH, height: EDITOR_HEIGHT };
+  let y = p.y - height - 8;
+  if (y < a.y) y = Math.min(p.y + p.height + 8, a.y + a.height - height);
+  const x = Math.max(a.x, Math.min(p.x + p.width - width, a.x + a.width - width));
+  return { x, y, width, height };
 }
+
+const editorBounds = () => besidePlayer(EDITOR_WIDTH, EDITOR_HEIGHT);
 
 function openEditor(file) {
   editorFile = file;
@@ -539,7 +765,7 @@ function createWindow() {
     backgroundColor: '#00000000',
     show: false,
     icon: ICON_PATH,
-    title: 'Lecteur MP3',
+    title: 'Hanabi Player',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
@@ -615,13 +841,93 @@ function send(cmd, arg) {
 
 // ---------- Effets d'ambiance ----------
 
-const FX_INTENSITIES = [['low', 'Douce'], ['normal', 'Normale'], ['high', 'Forte']];
+// Mêmes noms que FX_THEMES dans renderer/effects.js
+const FX_THEMES = [['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
+
+// Réglages modifiables depuis la fenêtre de personnalisation, avec leurs valeurs admises
+const FX_SETTINGS = {
+  fxPulse: (v) => typeof v === 'boolean',
+  fxPressure: (v) => typeof v === 'boolean',
+  fxHalo: (v) => typeof v === 'boolean',
+  fxNotes: (v) => typeof v === 'boolean',
+  fxNotesLevel: (v) => typeof v === 'number' && v >= 0 && v <= 1.5,
+  fxSyncMs: (v) => Number.isInteger(v) && v >= -200 && v <= 200,
+  fxPulseLevel: (v) => typeof v === 'number' && v >= 0 && v <= 1.5,
+  fxPressureLevel: (v) => typeof v === 'number' && v >= 0 && v <= 1.5,
+  fxHaloLevel: (v) => typeof v === 'number' && v >= 0 && v <= 1.5,
+  fxTheme: (v) => FX_THEMES.some(([name]) => name === v),
+  fxColorMode: (v) => ['theme', 'cover', 'custom'].includes(v),
+  fxCustomColor: (v) => /^#[0-9a-f]{6}$/i.test(v),
+  fxSource: (v) => ['stems', 'mix'].includes(v),
+};
+
+function fxConfig() {
+  return {
+    pulse: settings.fxPulse,
+    pressure: settings.fxPressure,
+    halo: settings.fxHalo,
+    notes: settings.fxNotes,
+    levels: { pulse: settings.fxPulseLevel, pressure: settings.fxPressureLevel, halo: settings.fxHaloLevel, notes: settings.fxNotesLevel },
+    syncMs: settings.fxSyncMs,
+    theme: settings.fxTheme,
+    colorMode: settings.fxColorMode,
+    customColor: settings.fxCustomColor,
+    source: settings.fxSource,
+  };
+}
 
 function setEffects(partial) {
-  Object.assign(settings, partial);
+  for (const [key, value] of Object.entries(partial)) {
+    if (FX_SETTINGS[key]?.(value)) settings[key] = value;
+  }
+  if (typeof partial.fxSyncMs === 'number' && playback.audioDevice) settings.fxSyncByDevice[playback.audioDevice] = settings.fxSyncMs;
   saveSettings();
-  send('effects', { pulse: settings.fxPulse, pressure: settings.fxPressure, halo: settings.fxHalo, intensity: settings.fxIntensity });
+  send('effects', fxConfig());
+  sendFxPanel();
   updateTray();
+}
+
+// ---------- Fenêtre « Personnaliser les effets » ----------
+
+const FX_PANEL_WIDTH = 360;
+const FX_PANEL_HEIGHT = 610;
+let fxPanel = null;
+
+function openFxPanel() {
+  if (fxPanel) {
+    fxPanel.show();
+    fxPanel.focus();
+    return;
+  }
+  fxPanel = new BrowserWindow({
+    ...besidePlayer(FX_PANEL_WIDTH, FX_PANEL_HEIGHT),
+    parent: win,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    backgroundMaterial: 'acrylic',
+    backgroundColor: '#00000000',
+    show: false,
+    icon: ICON_PATH,
+    title: 'Personnaliser les effets',
+    webPreferences: {
+      preload: path.join(__dirname, 'fx-panel-preload.js'),
+    },
+  });
+  fxPanel.loadFile(path.join(__dirname, 'renderer', 'fx-panel.html'));
+  fxPanel.once('ready-to-show', () => fxPanel.show());
+  // Même souci de première image que le lecteur avec le fond acrylic.
+  fxPanel.on('show', () => setTimeout(() => fxPanel && fxPanel.webContents.invalidate(), 50));
+  fxPanel.on('closed', () => { fxPanel = null; });
+}
+
+// Réglages et couleur de la pochette en cours, pour les aperçus
+const fxPanelState = () => ({ config: fxConfig(), coverColor: playback.fxColor || null, audioDevice: playback.audioDevice || null });
+
+function sendFxPanel() {
+  if (fxPanel && !fxPanel.isDestroyed()) fxPanel.webContents.send('fx-panel-update', fxPanelState());
 }
 
 // ---------- Effets sonores (appliqués à l'écoute par sound.js) ----------
@@ -670,18 +976,34 @@ function effectsMenu() {
   return [
     { label: 'Effet sonore', submenu: soundMenu() },
     { type: 'separator' },
-    { label: 'Pulsation sur les basses', type: 'checkbox', checked: settings.fxPulse, click: (item) => setEffects({ fxPulse: item.checked }) },
-    { label: 'Pression des basses lourdes', type: 'checkbox', checked: settings.fxPressure, click: (item) => setEffects({ fxPressure: item.checked }) },
-    { label: 'Halo d\'ambiance', type: 'checkbox', checked: settings.fxHalo, click: (item) => setEffects({ fxHalo: item.checked }) },
-    { type: 'separator' },
-    { label: 'Intensité', enabled: false },
-    ...FX_INTENSITIES.map(([value, label]) => ({
+    { label: 'Thème des effets visuels', enabled: false },
+    ...FX_THEMES.map(([value, label]) => ({
       label,
       type: 'radio',
-      checked: settings.fxIntensity === value,
-      enabled: settings.fxPulse || settings.fxPressure || settings.fxHalo,
-      click: () => setEffects({ fxIntensity: value }),
+      checked: settings.fxTheme === value,
+      click: () => setEffects({ fxTheme: value }),
     })),
+    { type: 'separator' },
+    { label: 'Rythme (la pochette)', type: 'checkbox', checked: settings.fxPulse, click: (item) => setEffects({ fxPulse: item.checked }) },
+    { label: 'Basse tenue (le contour)', type: 'checkbox', checked: settings.fxPressure, click: (item) => setEffects({ fxPressure: item.checked }) },
+    { label: 'Halo d\'ambiance', type: 'checkbox', checked: settings.fxHalo, click: (item) => setEffects({ fxHalo: item.checked }) },
+    { label: 'Voix et mélodie', type: 'checkbox', checked: settings.fxNotes, click: (item) => setEffects({ fxNotes: item.checked }) },
+    { type: 'separator' },
+    { label: 'Analyse des effets', enabled: false },
+    ...[['mix', 'Analyse du morceau (rapide)'], ['stems', 'Instruments séparés (morceaux déjà séparés)']].map(([value, label]) => ({
+      label,
+      type: 'radio',
+      checked: settings.fxSource === value,
+      click: () => setEffects({ fxSource: value }),
+    })),
+    // Jamais automatique : la séparation sollicite fortement le processeur (~la moitié de la durée du morceau)
+    {
+      label: 'Séparer les instruments de ce morceau (lent, sollicite le processeur)',
+      enabled: Boolean(playback.title), // un morceau est chargé
+      click: () => { setEffects({ fxSource: 'stems' }); send('separate-stems'); },
+    },
+    { type: 'separator' },
+    { label: 'Personnaliser les effets…', click: openFxPanel },
   ];
 }
 
@@ -717,7 +1039,12 @@ function createTray() {
 function updateTray() {
   if (!tray || !win) return;
   const menu = Menu.buildFromTemplate([
-    { label: playback.title || 'Lecteur MP3', enabled: false },
+    ...(updateReady ? [
+      // Sans clic, la mise à jour s'installe de toute façon à la prochaine fermeture
+      { label: `Redémarrer pour passer à la version ${updateReady}`, click: () => autoUpdater.quitAndInstall(true, true) },
+      { type: 'separator' },
+    ] : []),
+    { label: playback.title || 'Hanabi Player', enabled: false },
     { type: 'separator' },
     { label: playback.playing ? 'Pause' : 'Lecture', click: () => send('play-pause') },
     { label: 'Suivant', click: () => send('next') },
@@ -737,7 +1064,7 @@ function updateTray() {
     { label: 'Quitter', click: () => app.quit() },
   ]);
   tray.setContextMenu(menu);
-  const tip = playback.title ? `Lecteur MP3 — ${playback.title}` : 'Lecteur MP3';
+  const tip = playback.title ? `Hanabi Player — ${playback.title}` : 'Hanabi Player';
   tray.setToolTip(tip.length > 127 ? tip.slice(0, 126) + '…' : tip);
 }
 
@@ -746,7 +1073,7 @@ function updateTray() {
 ipcMain.handle('get-initial-state', async () => {
   let tracks = [];
   if (settings.folder && fs.existsSync(settings.folder)) tracks = await scanFolder(settings.folder);
-  return { settings, tracks, sound: soundEffect() };
+  return { settings, tracks, sound: soundEffect(), effects: fxConfig() };
 });
 
 ipcMain.handle('choose-folder', async () => {
@@ -779,6 +1106,85 @@ ipcMain.handle('read-audio', async (_e, file) => {
   }
 });
 
+// Séparation des instruments d'un morceau du dossier (voir separation.js) : batterie, basse, autres, voix,
+// pour que chaque effet lise sa piste. Une séparation à la fois, celle du dernier morceau demandé (les
+// autres sont abandonnées). Ce qu'en tire la page (les chronologies d'effets, quelques centaines de Ko)
+// est gardé sur disque par morceau et par version de l'analyse : la séparation ne se fait qu'une fois.
+const STEMS_CACHE_MAX = 200 * 1024 * 1024;
+let stemsGeneration = 0; // chaque demande et chaque abandon l'avancent : une séparation dépassée s'arrête
+const stemsCacheDir = () => path.join(app.getPath('userData'), 'fx-stems');
+
+async function stemsKey(file) {
+  if (!settings.folder || !/\.(mp3|opus|m4a)$/i.test(file)) return null;
+  if (!path.resolve(file).toLowerCase().startsWith(path.resolve(settings.folder).toLowerCase() + path.sep)) return null;
+  const stat = await fs.promises.stat(file);
+  return crypto.createHash('sha1').update(`${path.resolve(file)}|${stat.size}|${stat.mtimeMs}`).digest('hex');
+}
+
+// Toujours demandée par l'utilisateur (menu Effets) : un refus ou un échec lui est donc expliqué.
+ipcMain.handle('separate-stems', async (_e, file) => {
+  const refuse = (detail) => {
+    dialog.showMessageBox(win, { type: 'info', message: 'Séparation des instruments impossible', detail });
+    return null;
+  };
+  // dès l'arrivée : un abandon pendant les vérifications ci-dessous compte aussi
+  const generation = ++stemsGeneration;
+  const cancelled = () => stemsGeneration !== generation;
+  const { separateStems, MAX_SECONDS } = require('./separation');
+  const tooLong = `Ce morceau dure plus de ${MAX_SECONDS / 60} minutes : sa séparation serait trop longue.`;
+  try {
+    if (!(await stemsKey(file))) return refuse('Seuls les morceaux du dossier de musique (mp3, opus, m4a) peuvent être séparés.');
+    if ((await audioDuration(file)) > MAX_SECONDS) return refuse(tooLong);
+    if (cancelled()) return null;
+    const tracks = await separateStems(app, FFMPEG_PATH, file, cancelled);
+    if (!tracks && !cancelled()) return refuse('Le morceau n\'a pas pu être lu.');
+    return tracks; // null : abandonnée (autre morceau)
+  } catch (err) {
+    if (err.tooLong) return refuse(tooLong); // durée inconnue avant le décodage
+    console.warn('Séparation des instruments impossible :', err);
+    return refuse(`La séparation a échoué (${err.message}).`);
+  }
+});
+
+// Effets ratés signalés pendant l'écoute (touches F et C du lecteur) : une ligne JSON par signalement,
+// pour retrouver les passages où la détection se trompe.
+ipcMain.on('fx-report', (_e, r) => {
+  if (typeof r?.file !== 'string' || !Number.isFinite(r.time) || !['faux', 'manque'].includes(r.kind)) return;
+  const line = JSON.stringify({ file: r.file, time: r.time, kind: r.kind, source: String(r.source), at: new Date().toISOString() });
+  fs.appendFile(path.join(app.getPath('userData'), 'fx-reports.jsonl'), line + '\n', (err) => err && console.warn('Signalement non gardé :', err));
+});
+
+// Le morceau a changé pendant la séparation : on l'abandonne au prochain segment (le processeur se libère).
+ipcMain.on('cancel-stems', () => { stemsGeneration++; });
+
+ipcMain.handle('stems-cache-get', async (_e, file, version) => {
+  try {
+    const key = await stemsKey(file);
+    const cached = key && path.join(stemsCacheDir(), `${key}-${version}.bin`);
+    if (!cached || !fs.existsSync(cached)) return null;
+    fs.promises.utimes(cached, new Date(), new Date()).catch(() => {}); // récemment utilisé
+    return v8.deserialize(await fs.promises.readFile(cached));
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('stems-cache-set', async (_e, file, version, channels) => {
+  try {
+    const key = await stemsKey(file);
+    if (!key) return;
+    await fs.promises.mkdir(stemsCacheDir(), { recursive: true });
+    await fs.promises.writeFile(path.join(stemsCacheDir(), `${key}-${version}.bin`), v8.serialize(channels));
+    // place : on efface les plus anciennement utilisés au-delà de STEMS_CACHE_MAX
+    const files = (await fs.promises.readdir(stemsCacheDir())).map((f) => path.join(stemsCacheDir(), f))
+      .map((f) => ({ f, ...fs.statSync(f) })).sort((a, b) => b.mtimeMs - a.mtimeMs);
+    let used = 0;
+    for (const { f, size } of files) if ((used += size) > STEMS_CACHE_MAX) fs.promises.unlink(f).catch(() => {});
+  } catch (err) {
+    console.warn('Cache des pistes séparées impossible :', err);
+  }
+});
+
 ipcMain.handle('convert-youtube', (_e, url) => convertYoutube(url));
 ipcMain.on('cancel-youtube', cancelYoutube);
 ipcMain.handle('read-clipboard', () => clipboard.readText());
@@ -795,6 +1201,7 @@ ipcMain.handle('editor-load', async () => ({
   ...await readMetadata(editorFile),
 }));
 ipcMain.handle('editor-save', (_e, changes) => saveTagsViaPlayer(editorFile, changes));
+ipcMain.handle('editor-lookup', (_e, fields) => lookupForEditor(editorFile, fields));
 ipcMain.on('editor-close', () => editor?.close());
 
 ipcMain.on('save-state', (_e, partial) => {
@@ -807,9 +1214,44 @@ ipcMain.on('effects-menu', () => Menu.buildFromTemplate(effectsMenu()).popup({ w
 ipcMain.on('sound-menu', showSoundMenu);
 
 ipcMain.on('playback', (_e, info) => {
+  const deviceChanged = info.audioDevice && info.audioDevice !== playback.audioDevice;
   playback = { ...playback, ...info };
   updateTray();
+  // Nouvelle sortie audio : on reprend le réglage de synchronisation retenu pour elle (0 si inconnue).
+  if (deviceChanged) setEffects({ fxSyncMs: settings.fxSyncByDevice[info.audioDevice] ?? 0 });
+  else if (info.fxColor) sendFxPanel();
 });
+
+ipcMain.handle('fx-panel-load', () => fxPanelState());
+ipcMain.on('fx-panel-set', (_e, partial) => setEffects(partial));
+ipcMain.on('fx-panel-close', () => fxPanel?.close());
+
+// ---------- Mises à jour automatiques ----------
+
+// Les versions sont publiées dans les Releases du dépôt GitHub (privé) par
+// .github/workflows/release.yml. Pour les lire, l'app utilise un jeton en lecture seule que
+// GitHub Actions ajoute à l'installeur : une build faite en local n'en a pas et ne se met pas à jour.
+const UPDATE_CHECK_INTERVAL = 6 * 3600 * 1000;
+let updateReady = null; // version téléchargée, installée à la fermeture de l'app
+
+function setupAutoUpdate() {
+  if (!app.isPackaged) return;
+  let token;
+  try {
+    ({ token } = require('./update-token.json'));
+  } catch {
+    return;
+  }
+  autoUpdater.setFeedURL({ provider: 'github', owner: 'khamlica', repo: 'Lecteur-mp3', private: true, token });
+  autoUpdater.on('update-downloaded', (info) => {
+    updateReady = info.version;
+    updateTray();
+  });
+  autoUpdater.on('error', (err) => console.warn('Mise à jour impossible :', err.message));
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  check();
+  setInterval(check, UPDATE_CHECK_INTERVAL);
+}
 
 // ---------- Cycle de vie ----------
 
@@ -819,11 +1261,13 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => win && showWindow());
 
   app.whenReady().then(() => {
-    app.setAppUserModelId('com.khamlichi.lecteurmp3');
+    app.setAppUserModelId('com.khamlichi.lecteurmp3'); // identifiant d'origine, gardé pour les mises à jour
+    migrateOldData();
     loadSettings();
     createWindow();
     createTray();
     registerMediaKeys();
+    setupAutoUpdate();
   });
 
   app.on('will-quit', () => {

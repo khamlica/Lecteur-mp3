@@ -33,9 +33,13 @@ let errorStreak = 0;
 let lastPositionSave = 0;
 
 const sound = createSound(audio);
-const ambiance = createAmbiance(audio, $('bar'), api.readAudio, sound);
+const ambiance = createAmbiance(audio, $('bar'), api.readAudio, sound,
+  { separate: api.separateStems, cancel: api.cancelStems, get: api.stemsCacheGet, set: api.stemsCacheSet });
 let visualsOn = false;
 let soundLabel = null; // effet sonore actif, s'il y en a un
+let fxSource = 'mix';  // d'où viennent les effets du morceau en cours (voir createAmbiance, onSource)
+const FX_SOURCE_LABELS = { mix: 'analyse du morceau entier', separating: 'séparation des instruments en cours…', stems: 'instruments séparés' };
+ambiance.onSource((source) => { fxSource = source; renderFx(); });
 
 const current = () => (pos >= 0 ? tracks[order[pos]] : null);
 
@@ -105,7 +109,7 @@ function showInfo(track, meta) {
   } else {
     ui.coverImg.hidden = true;
     ui.coverImg.removeAttribute('src');
-    ambiance.setColor(null);
+    api.reportPlayback({ fxColor: ambiance.setColor(null) });
   }
   api.reportPlayback({ title: meta.artist ? `${title} — ${meta.artist}` : title });
 }
@@ -114,7 +118,7 @@ function showEmpty() {
   audio.removeAttribute('src');
   audio.load();
   ui.coverImg.hidden = true;
-  ambiance.setColor(null);
+  api.reportPlayback({ fxColor: ambiance.setColor(null) });
   ui.title.textContent = folder ? 'Aucun morceau trouvé' : 'Aucun dossier';
   ui.artist.textContent = folder ? folder : 'Cliquez ici pour choisir un dossier de musique';
   ui.info.title = 'Choisir un dossier de musique';
@@ -197,7 +201,7 @@ function toggleMute() {
 
 function setEffects(config) {
   ambiance.setConfig(config);
-  visualsOn = config.pulse || config.pressure || config.halo;
+  visualsOn = config.pulse || config.pressure || config.halo || config.notes;
   renderFx();
 }
 
@@ -209,7 +213,10 @@ function setSoundEffect({ name, label }) {
 
 function renderFx() {
   ui.fx.classList.toggle('active', visualsOn || !!soundLabel);
-  ui.fx.title = soundLabel ? `Effets (son : ${soundLabel})` : 'Effets';
+  // Un point sur le bouton : pulsant pendant la séparation des instruments, plein une fois séparés
+  ui.fx.dataset.source = visualsOn ? fxSource : '';
+  const details = [visualsOn && FX_SOURCE_LABELS[fxSource], soundLabel && `son : ${soundLabel}`].filter(Boolean);
+  ui.fx.title = details.length ? `Effets (${details.join(' ; ')})` : 'Effets';
 }
 
 async function chooseFolder() {
@@ -412,7 +419,7 @@ ui.shuffle.addEventListener('click', toggleShuffle);
 ui.repeat.addEventListener('click', cycleRepeat);
 $('folder').addEventListener('click', chooseFolder);
 ui.fx.addEventListener('click', () => api.showEffectsMenu());
-ui.coverImg.addEventListener('load', () => ambiance.setColor(ui.coverImg));
+ui.coverImg.addEventListener('load', () => api.reportPlayback({ fxColor: ambiance.setColor(ui.coverImg) }));
 $('cover').addEventListener('click', () => {
   if (current()) api.openEditor(current().path);
 });
@@ -474,8 +481,30 @@ document.addEventListener('keydown', (e) => {
     case 'm': case 'M': toggleMute(); break;
     case 's': case 'S': toggleShuffle(); break;
     case 'r': case 'R': cycleRepeat(); break;
+    case 'f': case 'F': reportFx('faux'); break;
+    case 'c': case 'C': reportFx('manque'); break;
   }
 });
+
+// Signalement d'un effet raté pendant l'écoute, pour améliorer la détection : F = la pochette s'est
+// allumée sans coup de batterie, C = un coup net n'a rien allumé. Gardé (main.js) avec le morceau,
+// l'instant et la méthode d'analyse ; un petit message confirme.
+let reportTimer = null;
+function reportFx(kind) {
+  const track = current();
+  if (!track || !visualsOn) return;
+  api.reportFx({ file: track.path, time: +audio.currentTime.toFixed(3), kind, source: fxSource });
+  let note = document.getElementById('fx-report');
+  if (!note) {
+    note = document.createElement('div');
+    note.id = 'fx-report';
+    document.body.append(note);
+  }
+  note.textContent = kind === 'faux' ? 'Signalé : allumée sans coup' : 'Signalé : coup manqué';
+  note.classList.add('shown');
+  clearTimeout(reportTimer);
+  reportTimer = setTimeout(() => note.classList.remove('shown'), 1200);
+}
 
 // Clic droit : choix de l'effet sonore. (Sur les zones qui servent à déplacer la fenêtre,
 // c'est le processus principal qui remplace le menu système par celui-ci.)
@@ -496,6 +525,7 @@ api.onCommand((cmd, arg) => {
     case 'yt-progress': showYoutubeProgress(arg); break;
     case 'save-tags': saveTags(arg.file, arg.changes).then((result) => api.tagsSaved(arg.id, result)); break;
     case 'effects': setEffects(arg); break;
+    case 'separate-stems': ambiance.separateNow(); break;
     case 'sound': setSoundEffect(arg); break;
     case 'flush': savePosition(); break;
   }
@@ -503,17 +533,26 @@ api.onCommand((cmd, arg) => {
 
 // ---------- Démarrage ----------
 
+// Sortie audio par défaut (haut-parleurs, casque Bluetooth…) : chacune garde son réglage de synchronisation.
+async function reportAudioDevice() {
+  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+  const output = devices.find((d) => d.kind === 'audiooutput' && d.deviceId === 'default');
+  if (output && output.label) api.reportPlayback({ audioDevice: output.label.replace(/^[^-]+ - /, '') });
+}
+navigator.mediaDevices.addEventListener('devicechange', reportAudioDevice);
+
 (async () => {
-  const { settings, tracks: list, sound: soundEffect } = await api.getInitialState();
+  const { settings, tracks: list, sound: soundEffect, effects } = await api.getInitialState();
   folder = settings.folder;
   shuffle = settings.shuffle;
   repeat = settings.repeat;
   audio.volume = settings.volume;
   audio.muted = settings.muted;
-  setEffects({ pulse: settings.fxPulse, pressure: settings.fxPressure, halo: settings.fxHalo, intensity: settings.fxIntensity });
+  setEffects(effects);
   setSoundEffect(soundEffect);
   renderModes();
   renderVolume();
   renderPlayState();
   setTracks(list, settings.lastTrack, settings.position);
+  reportAudioDevice();
 })();

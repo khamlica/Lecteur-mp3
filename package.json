@@ -29,6 +29,11 @@
     "asarUnpack": [
       "node_modules/ffmpeg-static/**"
     ],
+    "electronLanguages": [
+      "fr",
+      "en-US"
+    ],
+    "compression": "maximum",
     "win": {
       "target": "nsis",
       "icon": "assets/icon.png"

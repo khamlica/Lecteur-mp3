@@ -33,7 +33,27 @@ jobs:
           if [ -z "$UPDATE_TOKEN" ]; then echo "::error::Secret UPDATE_TOKEN manquant"; exit 1; fi
           printf '{"token":"%s"}' "$UPDATE_TOKEN" > src/update-token.json
 
-      - name: Construire et publier
-        run: npx electron-builder --win nsis --publish always
+      - name: Construire l'installeur
+        run: npx electron-builder --win nsis --publish never
+
+      # Envoi par gh plutôt que par electron-builder (la version 1.1.0 n'avait reçu que le .blockmap) :
+      # les trois fichiers sont vérifiés, déposés (en remplaçant ceux déjà présents), puis listés.
+      # latest.yml est celui que lisent les apps installées pour trouver la mise à jour.
+      - name: Publier la Release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="${GITHUB_REF_NAME}"
+          files=("dist/Hanabi-Player-Setup-$version.exe" "dist/Hanabi-Player-Setup-$version.exe.blockmap" "dist/latest.yml")
+          for f in "${files[@]}"; do
+            if [ ! -f "$f" ]; then echo "::error::Fichier manquant : $f"; ls -la dist; exit 1; fi
+          done
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" "${files[@]}" --clobber
+          else
+            gh release create "$tag" "${files[@]}" --title "$version" --notes "Version $version"
+          fi
+          echo "Fichiers de la Release $tag :"
+          gh release view "$tag" --json assets --jq '.assets[] | "\(.name) \(.size)"'

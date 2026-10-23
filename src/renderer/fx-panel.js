@@ -28,6 +28,7 @@ for (const [name, theme] of Object.entries(FX_THEMES)) {
   card.innerHTML = `
     <div class="preview fx-surface" data-fx-theme="${name}">
       <div class="fx-bass"></div>
+      <div class="fx-lift"></div><div class="fx-sparkles"><i></i><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
       <div class="fx-notes"></div>
       <div class="fx-melody"></div>
       <div class="mini-cover fx-cover"></div>
@@ -139,7 +140,7 @@ function demo(t) {
     // crans de force comme dans le lecteur : coup ordinaire 80 %, accent (début de mesure) plein
     pulse: rhythmic && cycle % (fast ? 0.5 : 1) < (fast ? 0.25 : 0.5)
       ? (cycle % 2 < 0.25 ? 1 : 0.8) * Math.min(1, since / 0.03) * Math.exp(-since / 0.22) : 0,
-    // percussions : la pochette s'éclaire sur les temps 2 et 4
+    // motif signature (comme un clap sur les temps 2 et 4) : la pochette s'éclaire
     pulseHigh: rhythmic && cycle % (fast ? 0.5 : 1) >= (fast ? 0.25 : 0.5) ? 0.8 * Math.min(1, since / 0.02) * Math.exp(-since / 0.14) : 0,
     // mélodie de fond : un riff de 4 notes par mesure, de l'aigu au grave
     melody: cycle >= 2 && cycle < 7 ? Math.min(1, ((cycle - 2) % 0.5) / 0.04) * Math.exp(-((cycle - 2) % 0.5) / 0.3) : 0,
@@ -148,20 +149,26 @@ function demo(t) {
     // flashs par seconde comptés comme dans le lecteur (un coup aigu compte pour FX_HIGH_FLASH)
     pulseRate: (fast ? 2 : rhythmic ? 1 : 0) * (1 + FX_HIGH_FLASH),
     glow: 0.5 + 0.25 * Math.sin(t * 0.9),
+    // passage aigu : le haut du lecteur s'éclaire pendant la phrase la plus haute
+    lift: 0.9 * smoothstep(1, 1.6, cycle) * (1 - smoothstep(2.6, 3.2, cycle)),
+    // passage rêveur (sans rythme, la voix porte) : le halo d'ambiance respire dans les tons chauds
+    dreamy: 0.8 * smoothstep(4.6, 5.4, cycle) * (1 - smoothstep(7.2, 8, cycle)),
     // une note toutes les 0,75 s, qui s'éteint en ~0,8 s : à droite en montant, à gauche en descendant
     noteLeft: cycle >= 3 && cycle < 6 ? noteEnvelope((cycle - 3) % 0.75) : 0,
     noteRight: cycle < 3 ? noteEnvelope(cycle % 0.75) : 0,
+    // la voix chante (halo de droite doucement allumé) pendant les notes, puis se tait
+    voicePresence: smoothstep(0, 0.3, cycle) * (1 - smoothstep(5.6, 6.2, cycle)),
     brightness: 0.5 + 0.5 * Math.sin(t * 0.6),
   };
 }
 
 // N'animer que le thème choisi et celui qu'on survole (les autres montrent une image fixe) ;
 // quand on règle un effet, l'aperçu ne montre que lui.
-const STILL = { pulse: 0.5, pulseHigh: 0, melody: 0.5, melodyTone: 0.6, pulseRate: 1.3, pressure: 0.6, glow: 0.5, noteLeft: 0.5, noteRight: 0, brightness: 0.5 };
+const STILL = { pulse: 0.5, pulseHigh: 0, voicePresence: 0.6, dreamy: 0, lift: 0, melody: 0.5, melodyTone: 0.6, pulseRate: 1.3, pressure: 0.6, glow: 0.5, noteLeft: 0.5, noteRight: 0, brightness: 0.5 };
 
 // Mouvements réduits : comme dans le lecteur, les pulsations deviennent des fondus (voir createAmbiance)
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const faded = {};
+const faded = {}, voiceSweeps = {};
 let lastFrame = 0;
 
 function animate(ms) {
@@ -180,6 +187,7 @@ function animate(ms) {
       v.percHit = f.pulseHigh = follow(f.pulseHigh, v.percHit, dt, 0.06, 0.15);
       v.melody = f.melody = follow(f.melody || 0, v.melody, dt, 0.06, 0.2);
     }
+    fxVoiceSweep((voiceSweeps[name] ??= { pos: 1, target: 1 }), v, dt, reducedMotion.matches);
     v.warm = fxWarmFrom(coverColor);
     v.coverColor = coverColor || FX_FALLBACK_COLOR;
     applyFx(el, name, fxBaseColor({ ...config, theme: name }, coverColor || FX_FALLBACK_COLOR), v, t);

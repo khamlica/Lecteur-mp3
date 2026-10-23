@@ -3,7 +3,6 @@ const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const v8 = require('v8');
 const { spawn, execFile } = require('child_process');
 const { pathToFileURL } = require('url');
 
@@ -35,7 +34,6 @@ const DEFAULTS = {
   fxTheme: 'aurora',       // 'aurora' | 'neon' | 'ember' | 'mono' (voir FX_THEMES)
   fxColorMode: 'theme',    // 'theme' | 'cover' | 'custom'
   fxCustomColor: '#ff7a3d',
-  fxSource: 'mix',         // méthode d'analyse des effets : 'mix' (morceau entier) | 'stems' (instruments séparés à la demande)
   soundFx: 'none',         // effet sonore à l'écoute (voir SOUND_EFFECTS)
 };
 
@@ -858,7 +856,6 @@ const FX_SETTINGS = {
   fxTheme: (v) => FX_THEMES.some(([name]) => name === v),
   fxColorMode: (v) => ['theme', 'cover', 'custom'].includes(v),
   fxCustomColor: (v) => /^#[0-9a-f]{6}$/i.test(v),
-  fxSource: (v) => ['stems', 'mix'].includes(v),
 };
 
 function fxConfig() {
@@ -872,7 +869,6 @@ function fxConfig() {
     theme: settings.fxTheme,
     colorMode: settings.fxColorMode,
     customColor: settings.fxCustomColor,
-    source: settings.fxSource,
   };
 }
 
@@ -989,20 +985,6 @@ function effectsMenu() {
     { label: 'Halo d\'ambiance', type: 'checkbox', checked: settings.fxHalo, click: (item) => setEffects({ fxHalo: item.checked }) },
     { label: 'Voix et mélodie', type: 'checkbox', checked: settings.fxNotes, click: (item) => setEffects({ fxNotes: item.checked }) },
     { type: 'separator' },
-    { label: 'Analyse des effets', enabled: false },
-    ...[['mix', 'Analyse du morceau (rapide)'], ['stems', 'Instruments séparés (morceaux déjà séparés)']].map(([value, label]) => ({
-      label,
-      type: 'radio',
-      checked: settings.fxSource === value,
-      click: () => setEffects({ fxSource: value }),
-    })),
-    // Jamais automatique : la séparation sollicite fortement le processeur (~la moitié de la durée du morceau)
-    {
-      label: 'Séparer les instruments de ce morceau (lent, sollicite le processeur)',
-      enabled: Boolean(playback.title), // un morceau est chargé
-      click: () => { setEffects({ fxSource: 'stems' }); send('separate-stems'); },
-    },
-    { type: 'separator' },
     { label: 'Personnaliser les effets…', click: openFxPanel },
   ];
 }
@@ -1106,83 +1088,12 @@ ipcMain.handle('read-audio', async (_e, file) => {
   }
 });
 
-// Séparation des instruments d'un morceau du dossier (voir separation.js) : batterie, basse, autres, voix,
-// pour que chaque effet lise sa piste. Une séparation à la fois, celle du dernier morceau demandé (les
-// autres sont abandonnées). Ce qu'en tire la page (les chronologies d'effets, quelques centaines de Ko)
-// est gardé sur disque par morceau et par version de l'analyse : la séparation ne se fait qu'une fois.
-const STEMS_CACHE_MAX = 200 * 1024 * 1024;
-let stemsGeneration = 0; // chaque demande et chaque abandon l'avancent : une séparation dépassée s'arrête
-const stemsCacheDir = () => path.join(app.getPath('userData'), 'fx-stems');
-
-async function stemsKey(file) {
-  if (!settings.folder || !/\.(mp3|opus|m4a)$/i.test(file)) return null;
-  if (!path.resolve(file).toLowerCase().startsWith(path.resolve(settings.folder).toLowerCase() + path.sep)) return null;
-  const stat = await fs.promises.stat(file);
-  return crypto.createHash('sha1').update(`${path.resolve(file)}|${stat.size}|${stat.mtimeMs}`).digest('hex');
-}
-
-// Toujours demandée par l'utilisateur (menu Effets) : un refus ou un échec lui est donc expliqué.
-ipcMain.handle('separate-stems', async (_e, file) => {
-  const refuse = (detail) => {
-    dialog.showMessageBox(win, { type: 'info', message: 'Séparation des instruments impossible', detail });
-    return null;
-  };
-  // dès l'arrivée : un abandon pendant les vérifications ci-dessous compte aussi
-  const generation = ++stemsGeneration;
-  const cancelled = () => stemsGeneration !== generation;
-  const { separateStems, MAX_SECONDS } = require('./separation');
-  const tooLong = `Ce morceau dure plus de ${MAX_SECONDS / 60} minutes : sa séparation serait trop longue.`;
-  try {
-    if (!(await stemsKey(file))) return refuse('Seuls les morceaux du dossier de musique (mp3, opus, m4a) peuvent être séparés.');
-    if ((await audioDuration(file)) > MAX_SECONDS) return refuse(tooLong);
-    if (cancelled()) return null;
-    const tracks = await separateStems(app, FFMPEG_PATH, file, cancelled);
-    if (!tracks && !cancelled()) return refuse('Le morceau n\'a pas pu être lu.');
-    return tracks; // null : abandonnée (autre morceau)
-  } catch (err) {
-    if (err.tooLong) return refuse(tooLong); // durée inconnue avant le décodage
-    console.warn('Séparation des instruments impossible :', err);
-    return refuse(`La séparation a échoué (${err.message}).`);
-  }
-});
-
 // Effets ratés signalés pendant l'écoute (touches F et C du lecteur) : une ligne JSON par signalement,
 // pour retrouver les passages où la détection se trompe.
 ipcMain.on('fx-report', (_e, r) => {
   if (typeof r?.file !== 'string' || !Number.isFinite(r.time) || !['faux', 'manque'].includes(r.kind)) return;
   const line = JSON.stringify({ file: r.file, time: r.time, kind: r.kind, source: String(r.source), at: new Date().toISOString() });
   fs.appendFile(path.join(app.getPath('userData'), 'fx-reports.jsonl'), line + '\n', (err) => err && console.warn('Signalement non gardé :', err));
-});
-
-// Le morceau a changé pendant la séparation : on l'abandonne au prochain segment (le processeur se libère).
-ipcMain.on('cancel-stems', () => { stemsGeneration++; });
-
-ipcMain.handle('stems-cache-get', async (_e, file, version) => {
-  try {
-    const key = await stemsKey(file);
-    const cached = key && path.join(stemsCacheDir(), `${key}-${version}.bin`);
-    if (!cached || !fs.existsSync(cached)) return null;
-    fs.promises.utimes(cached, new Date(), new Date()).catch(() => {}); // récemment utilisé
-    return v8.deserialize(await fs.promises.readFile(cached));
-  } catch {
-    return null;
-  }
-});
-
-ipcMain.handle('stems-cache-set', async (_e, file, version, channels) => {
-  try {
-    const key = await stemsKey(file);
-    if (!key) return;
-    await fs.promises.mkdir(stemsCacheDir(), { recursive: true });
-    await fs.promises.writeFile(path.join(stemsCacheDir(), `${key}-${version}.bin`), v8.serialize(channels));
-    // place : on efface les plus anciennement utilisés au-delà de STEMS_CACHE_MAX
-    const files = (await fs.promises.readdir(stemsCacheDir())).map((f) => path.join(stemsCacheDir(), f))
-      .map((f) => ({ f, ...fs.statSync(f) })).sort((a, b) => b.mtimeMs - a.mtimeMs);
-    let used = 0;
-    for (const { f, size } of files) if ((used += size) > STEMS_CACHE_MAX) fs.promises.unlink(f).catch(() => {});
-  } catch (err) {
-    console.warn('Cache des pistes séparées impossible :', err);
-  }
 });
 
 ipcMain.handle('convert-youtube', (_e, url) => convertYoutube(url));

@@ -2,10 +2,13 @@
    et par les aperçus de la fenêtre de personnalisation.
 
    Une zone par élément de la musique, pour que chacun vive à sa place sans masquer les autres :
-     la basse (kick, 808)      la pochette « saute » ;
-     la voix                   un large halo qui entre par la droite (la gauche est réservée au rythme) ;
-     les percussions           la pochette s'éclaire brièvement sur chaque coup ;
+     chaque coup               la pochette « saute », sans lumière ;
+     la voix                   un halo à droite quand la mélodie monte, à gauche quand elle descend ;
+     le motif signature        la pochette s'éclaire d'elle-même (seuls ses coups l'éclairent) ;
      la mélodie de fond        le haut et le bas du lecteur, d'une lueur douce (pistes séparées) ;
+     un passage aigu           une lumière claire qui descend du haut du lecteur ;
+     un passage rêveur         le halo d'ambiance qui respire dans les tons chauds, des étincelles
+                               discrètes sur tout le lecteur, le rythme plus calme ;
      l'énergie                 la teinte du fond ; la basse longue et lourde, tout le contour qui s'illumine.
 
    Variables posées sur l'élément .fx-surface :
@@ -19,8 +22,8 @@
      --fx-accent    couleur de la pression
      --fx-flicker-a/b/c  vacillement lent, de 0 à 1 (braises)
      --fx-origin    abscisse du centre de la pochette, d'où part l'éclat des braises
-     --fx-voice     halo de la voix (à droite), de 0 à 1 ; --fx-voice-reach sa taille ;
-                    --fx-note-color sa couleur */
+     --fx-voice     halo de la voix, de 0 à 1 ; --fx-voice-pos sa place (0 à gauche, 1 à droite) ;
+                    --fx-voice-reach sa taille ; --fx-note-color sa couleur */
 
 .fx-surface {
   position: relative;
@@ -39,10 +42,15 @@
   --fx-flicker-c: 0.5;
   --fx-origin: 44px;
   --fx-voice: 0;
-  --fx-voice-reach: 55%;
+  --fx-voice-pos: 1;
+  --fx-voice-reach: 40%;
   --fx-note-color: 255 255 255;
   --fx-cover-color: 255 255 255;
   --fx-melody: 0;
+  --fx-lift: 0;
+  --fx-dreamy: 0;
+  --fx-spark-color: 255 230 200;
+  --fx-lift-color: 255 255 255;
   --fx-melody-color: 255 255 255;
   --fx-note-alpha: 0.7;
   --fx-bass-band: 16px;   /* épaisseur de la bande lumineuse le long du bord */
@@ -50,22 +58,135 @@
   --fx-bass-flicker: 1;
 }
 
-/* Basse tenue : tout le contour du lecteur s'illumine, un liseré et sa lueur vers l'intérieur, dans la
-   couleur chaude de la pochette, au rythme de l'ondulation de la basse (élément .fx-bass dans la surface) */
+/* Basse tenue : tout le contour du lecteur s'illumine, un liseré et son halo vers l'intérieur, dans la
+   couleur de la pochette elle-même ; plus la basse est lourde, plus le liseré s'épaissit et le halo
+   s'élargit (jusqu'à deux fois), et il vibre avec sa puissance (élément .fx-bass dans la surface) */
 .fx-bass {
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   -webkit-app-region: initial;
+  --fx-bass-color: var(--fx-cover-color);
   --fx-bass-a: calc(var(--fx-pressure) * var(--fx-bass-alpha) * var(--fx-bass-flicker));
   box-shadow:
-    inset 0 0 0 1px rgb(var(--fx-accent) / min(0.9, calc(var(--fx-bass-a) * 0.9))),
-    inset 0 0 calc(var(--fx-bass-band) * 0.5) rgb(var(--fx-accent) / min(0.6, calc(var(--fx-bass-a) * 0.6)));
+    inset 0 0 0 calc(1px + var(--fx-pressure) * 1.5px) rgb(var(--fx-bass-color) / min(0.95, calc(var(--fx-bass-a) * 0.95))),
+    inset 0 0 calc(var(--fx-bass-band) * (0.5 + 1.5 * var(--fx-pressure))) rgb(var(--fx-bass-color) / min(0.75, calc(var(--fx-bass-a) * 0.75)));
 }
 
-/* Voix : un large halo doux qui entre par la droite à chaque note (la gauche est réservée au rythme)
-   (élément .fx-notes dans la surface) */
+.fx-surface[data-fx-theme="mono"] .fx-bass {
+  --fx-bass-color: 255 255 255;
+}
+
+/* Passage rêveur : des étincelles discrètes sur tout le lecteur, trois semis qui scintillent l'un après
+   l'autre (~3 s chacun) en montant à peine, dans une lumière chaude et claire (élément .fx-sparkles dans
+   la surface ; l'animation ne tourne que pendant le passage, classe fx-dreamy-on) */
+.fx-sparkles {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-app-region: initial;
+  overflow: hidden;
+  opacity: min(1, calc(var(--fx-dreamy) * 1.1));
+}
+
+.fx-sparkles::before,
+.fx-sparkles::after,
+.fx-sparkles > i {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  --s: rgb(var(--fx-spark-color) / 0.95);
+}
+
+.fx-sparkles::before {
+  background:
+    radial-gradient(circle 3px at 8% 30%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 2px at 23% 72%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 3px at 41% 18%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 2px at 57% 64%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 3px at 74% 35%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 2px at 91% 78%, var(--s) 0 30%, transparent 100%);
+}
+
+.fx-sparkles::after {
+  background:
+    radial-gradient(circle 2px at 14% 58%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 3px at 33% 40%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 2px at 49% 85%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 3px at 66% 22%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 2px at 82% 55%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 3px at 96% 26%, var(--s) 0 30%, transparent 100%);
+}
+
+.fx-sparkles > i {
+  background:
+    radial-gradient(circle 3px at 4% 82%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 2px at 28% 15%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 3px at 52% 45%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 2px at 70% 88%, var(--s) 0 30%, transparent 100%),
+    radial-gradient(circle 3px at 87% 12%, var(--s) 0 30%, transparent 100%);
+}
+
+.fx-surface.fx-dreamy-on .fx-sparkles::before { animation: fx-twinkle 3.2s ease-in-out infinite; }
+.fx-surface.fx-dreamy-on .fx-sparkles::after { animation: fx-twinkle 3.2s ease-in-out -1.07s infinite; }
+.fx-surface.fx-dreamy-on .fx-sparkles > i { animation: fx-twinkle 3.2s ease-in-out -2.13s infinite; }
+
+@keyframes fx-twinkle {
+  0%, 100% { opacity: 0; transform: translateY(1px); }
+  50% { opacity: 1; transform: translateY(-2px); }
+}
+
+/* … et par-dessus, des reflets : de petites lueurs diffuses qui s'allument et s'éteignent doucement, ici et
+   là, chacune à son rythme */
+.fx-sparkles > b {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(closest-side, rgb(var(--fx-spark-color) / 0.55), rgb(var(--fx-spark-color) / 0.18) 55%, transparent);
+}
+
+.fx-sparkles > b:nth-of-type(1) { left: 11%; top: 22%; --t: 2.3s; --d: -0.2s; }
+.fx-sparkles > b:nth-of-type(2) { left: 26%; top: 66%; --t: 2.9s; --d: -1.4s; }
+.fx-sparkles > b:nth-of-type(3) { left: 38%; top: 34%; --t: 2.6s; --d: -2.1s; }
+.fx-sparkles > b:nth-of-type(4) { left: 53%; top: 78%; --t: 3.1s; --d: -0.9s; }
+.fx-sparkles > b:nth-of-type(5) { left: 63%; top: 16%; --t: 2.4s; --d: -1.7s; }
+.fx-sparkles > b:nth-of-type(6) { left: 77%; top: 60%; --t: 2.8s; --d: -0.5s; }
+.fx-sparkles > b:nth-of-type(7) { left: 88%; top: 28%; --t: 2.5s; --d: -2.4s; }
+.fx-sparkles > b:nth-of-type(8) { left: 95%; top: 74%; --t: 3s; --d: -1.1s; }
+
+.fx-surface.fx-dreamy-on .fx-sparkles > b { animation: fx-glint var(--t) ease-out var(--d) infinite; }
+
+@keyframes fx-glint {
+  0%, 100% { opacity: 0; transform: scale(0.6); }
+  20% { opacity: 1; transform: scale(1); }
+  45% { opacity: 0; transform: scale(1.15); }
+}
+
+/* Passage aigu (la mélodie monte nettement au-dessus de son habitude, un passage mémorable) : une lumière
+   claire descend du haut du lecteur, un liseré et sa lueur (élément .fx-lift dans la surface) */
+.fx-lift {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  -webkit-app-region: initial;
+  box-shadow:
+    inset 0 1px 0 0 rgb(var(--fx-lift-color) / min(0.8, calc(var(--fx-lift) * 0.8))),
+    inset 0 calc(6px + var(--fx-lift) * 10px) 18px -8px rgb(var(--fx-lift-color) / min(0.6, calc(var(--fx-lift) * 0.6)));
+}
+
+.fx-surface[data-fx-theme="mono"] .fx-lift {
+  opacity: 0.5;
+}
+
+/* Voix : un halo doux, à droite quand la mélodie monte, à gauche quand elle descend, qui glisse d'un
+   côté à l'autre quand elle change de sens, allumé tant qu'elle chante (élément .fx-notes dans la surface) */
 .fx-notes {
   position: absolute;
   inset: 0;
@@ -73,7 +194,7 @@
   pointer-events: none;
   -webkit-app-region: initial;
   background:
-    radial-gradient(var(--fx-voice-reach) 95% at 100% 50%,
+    radial-gradient(var(--fx-voice-reach) 85% at calc(var(--fx-cover-edge) + (100% - var(--fx-cover-edge)) * var(--fx-voice-pos)) 50%,
       rgb(var(--fx-note-color) / calc(var(--fx-voice) * var(--fx-note-alpha))), transparent);
 }
 
@@ -108,17 +229,14 @@
   -webkit-app-region: initial;
 }
 
-/* La pochette porte le rythme : elle « saute » sur la basse (kick, 808) en s'entourant d'une lueur, et
-   s'éclaire sur les percussions (caisse claire, clap…), comme rétroéclairée : ses propres couleurs
-   deviennent plus lumineuses et plus vives et une lueur de sa couleur monte derrière elle, sans voile
-   blanc ; l'énergie, elle, teinte le fond */
+/* La pochette porte le rythme : elle « saute » sur chaque coup, et ne s'éclaire que sur les coups du motif
+   signature (pistes séparées : sur la caisse claire) : l'image elle-même, comme rétroéclairée, ses propres
+   couleurs plus lumineuses et plus vives, sans halo autour ni voile blanc ; l'énergie, elle, teinte le fond */
 .fx-cover {
   box-shadow:
-    0 2px 10px rgba(0, 0, 0, 0.35),
-    0 0 calc(var(--fx-perc-hit) * 18px) calc(var(--fx-perc-hit) * 4px) rgb(var(--fx-cover-color) / min(0.9, calc(var(--fx-perc-hit) * 0.9))),
-    0 0 calc(var(--fx-pulse) * 14px) calc(var(--fx-pulse) * 2px) rgb(var(--fx-color) / min(0.85, calc(var(--fx-pulse) * 0.85)));
+    0 2px 10px rgba(0, 0, 0, 0.35);
   transform: scale(calc(1 + var(--fx-pulse) * 0.06));
-  filter: brightness(calc(1 + var(--fx-perc-hit) * 0.3)) saturate(calc(1 + var(--fx-perc-hit) * 0.35));
+  filter: brightness(calc(1 + var(--fx-perc-hit) * 0.4)) saturate(calc(1 + var(--fx-perc-hit) * 0.45));
   will-change: transform;
 }
 
@@ -189,8 +307,7 @@
   filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.5));
 }
 
-/* Mouvements réduits (réglage Windows) : la pochette ne saute plus (la basse n'y garde que sa lueur,
-   les percussions l'éclairent toujours) ; les coups deviennent des fondus (effects.js) ; les halos de la
+/* Mouvements réduits (réglage Windows) : la pochette ne saute plus (le motif signature l'éclaire toujours) ; les coups deviennent des fondus (effects.js) ; les halos de la
    voix gardent une taille fixe au lieu de s'étendre */
 @media (prefers-reduced-motion: reduce) {
   .fx-cover {
@@ -198,7 +315,21 @@
   }
 
   .fx-surface {
-    --fx-voice-reach: 50% !important;
+    --fx-voice-reach: 30% !important;
+  }
+
+  /* étincelles fixes et très légères, sans scintiller */
+  .fx-surface.fx-dreamy-on .fx-sparkles::before,
+  .fx-surface.fx-dreamy-on .fx-sparkles::after,
+  .fx-surface.fx-dreamy-on .fx-sparkles > i {
+    animation: none;
+    opacity: 0.35;
+  }
+
+  /* pas de reflets qui s'allument et s'éteignent */
+  .fx-surface.fx-dreamy-on .fx-sparkles > b {
+    animation: none;
+    opacity: 0;
   }
 
 }

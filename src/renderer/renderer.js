@@ -33,8 +33,7 @@ let errorStreak = 0;
 let lastPositionSave = 0;
 
 const sound = createSound(audio);
-const ambiance = createAmbiance(audio, $('bar'), api.readAudio, sound,
-  { separate: api.separateStems, cancel: api.cancelStems, get: api.stemsCacheGet, set: api.stemsCacheSet });
+const ambiance = createAmbiance(audio, $('bar'), api.readAudio, sound);
 let visualsOn = false;
 let soundLabel = null; // effet sonore actif, s'il y en a un
 let fxSource = 'mix';  // d'où viennent les effets du morceau en cours (voir createAmbiance, onSource)
@@ -525,7 +524,6 @@ api.onCommand((cmd, arg) => {
     case 'yt-progress': showYoutubeProgress(arg); break;
     case 'save-tags': saveTags(arg.file, arg.changes).then((result) => api.tagsSaved(arg.id, result)); break;
     case 'effects': setEffects(arg); break;
-    case 'separate-stems': ambiance.separateNow(); break;
     case 'sound': setSoundEffect(arg); break;
     case 'flush': savePosition(); break;
   }

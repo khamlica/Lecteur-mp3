@@ -1,7 +1,7 @@
 // Pré-analyse d'un morceau hors du fil de l'interface (voir analyseTrackOffThread dans effects.js) :
 // séparation harmonique/percussive, contour de la mélodie et chronologie des effets prennent
 // plusieurs secondes et feraient saccader l'affichage.
-importScripts('fx-perc-model.js', 'effects.js'); // modèle des percussions : seule la pré-analyse s'en sert
+importScripts('fx-perc-model.js', 'fx-voice-model.js', 'effects.js'); // modèle des percussions : seule la pré-analyse s'en sert
 
 onmessage = async ({ data }) => {
   try {

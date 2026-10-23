@@ -1,3 +1,6 @@
+// Outil de test (hors de l'app) : séparation des instruments par HT-Demucs (ONNX, onnxruntime-node en
+// dépendance de développement, modèle dans models/htdemucs.onnx). Gardé comme référence pour mesurer la
+// détection procédurale des effets ; le lecteur ne l'embarque plus.
 // Séparation des instruments (processus principal) : HT-Demucs, un réseau de neurones entraîné à
 // séparer un morceau en quatre pistes (batterie, basse, autres, voix). Chaque effet visuel lit alors la
 // sienne : les coups sur la batterie (une syllabe ne passe plus pour une caisse claire), la voix sur la

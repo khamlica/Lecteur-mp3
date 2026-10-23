@@ -3,8 +3,8 @@
 //  - percussions (caisse claire…) → la pochette s'éclaire, comme rétroéclairée, plus brièvement
 //  - basse longue et lourde       → tout le contour du lecteur s'illumine, au rythme de son ondulation
 //  - énergie et brillance         → teinte d'ambiance qui évolue sur plusieurs secondes
-//  - voix (mélodie chantée)       → un large halo doux entre par la droite à chaque note (la gauche
-//                                   est réservée au rythme)
+//  - voix (mélodie chantée)       → un halo doux, à droite quand la mélodie monte, à gauche quand elle
+//                                   descend, allumé tant qu'elle chante
 // Chaque effet a sa place (pochette, contour, côtés, fond) : ils coexistent sans s'atténuer.
 
 const FX_FALLBACK_COLOR = [150, 180, 255]; // bleu nuit éclairci de la pochette par défaut
@@ -230,6 +230,7 @@ function createFeel({ contour: useContour = true } = {}) {
       kickEnv: 0,       // enveloppe du dernier coup grave
       highEnv: 0,       // enveloppe du dernier coup aigu
       pulseHigh: 0,
+      signatureKnown: false, // le motif signature est connu (pré-analyse du mix) : lui seul éclaire la pochette
       pulseHits: 0,     // coups récents (décroît en ~2 s) : pulsations par seconde ≈ pulseHits / 2 (voir FX_HIGH_FLASH)
       hitRises: { kick: [], snare: [] }, // montées des derniers coups, par sorte : référence des crans de force
       hitHold: { kick: 0, snare: 0 }, // temps restant au sommet avant que la pulsation retombe
@@ -282,6 +283,7 @@ function createFeel({ contour: useContour = true } = {}) {
             if (p.kick && (fxRule(rules.kick, mean) > 0 || broadKick)) { strikes('kick'); lowHit = p.kick; }
             else { strikes('snare'); highHit = p.tone || p.kick; }
             if (p.percSignature) signatureHit = 1; // coup du motif signature (voir fxSignature)
+            s.signatureKnown = p.percSignature !== undefined;
           }
         } else {
           if (p.kick && (fxRule(rules.kick, mean) > 0 || broadKick) && strikes('kick')) lowHit = p.kick;
@@ -397,8 +399,12 @@ function createFeel({ contour: useContour = true } = {}) {
     } else if (lowHit || highHit) {
       const step = lowHit ? strike('kick', lowHit) : strike('snare', highHit);
       s.kickEnv = Math.max(s.kickEnv, step);
-      s.highEnv = Math.max(s.highEnv, step);
-      s.hitHold.kick = s.hitHold.snare = 0.04;
+      s.hitHold.kick = 0.04;
+      // Avec le motif signature (pré-analyse), seuls ses coups éclairent la pochette ; les autres la font
+      // seulement sauter. Sans lui (direct, règles), tout coup l'éclaire aussi.
+      if (!s.signatureKnown || signatureHit) { s.highEnv = Math.max(s.highEnv, step); s.hitHold.snare = 0.04; }
+      else if (s.hitHold.snare > 0) s.hitHold.snare -= dt;
+      else s.highEnv *= Math.exp(-dt / fall('snare', 0.14, 0.1));
     } else {
       if (s.hitHold.kick > 0) s.hitHold.kick -= dt; else s.kickEnv *= Math.exp(-dt / fall('kick', 0.22, 0.15));
       if (s.hitHold.snare > 0) s.hitHold.snare -= dt; else s.highEnv *= Math.exp(-dt / fall('snare', 0.14, 0.1));
@@ -596,6 +602,7 @@ async function hpssFeatures(L, n, bands) {
   out.melodySide = melody.side;
   out.melodyPitch = melody.pitch;     // pour vérification (banc d'essai)
   out.melodyVoiced = melody.clarity.map((c) => (c >= melody.voicedMin ? 1 : 0));
+  out.melodyClarity = melody.clarity; // netteté de la série harmonique (voix, instrument mélodique)
   return out;
 }
 
@@ -728,7 +735,7 @@ const FX_PROFILE_MAX = 15 * 60; // au-delà (mix d'une heure…), on reste en mo
 // chaque effet joué en avance de son propre retard (analyse + montée), mesuré sur des attaques
 // et des changements connus : la pulsation est à mi-hauteur ~51 ms après l'attaque, une note ~78 ms,
 // la pression à mi-chemin 0,5 s après l'arrivée de la basse, le halo 1,5 s après un drop.
-const FX_LEAD = { melody: 0.06, melodyTone: 0.06, pulse: 0.051, pulseHigh: 0.051, pulseRate: 0.051, noteLeft: 0.078, noteRight: 0.078, noteLeftA: 0.078, noteRightA: 0.078, pressure: 0.5, glow: 1.5, brightness: 0.7 };
+const FX_LEAD = { melody: 0.06, melodyTone: 0.06, pulse: 0.051, pulseHigh: 0.051, pulseRate: 0.051, voicePresence: 0.1, dreamy: 0.8, lift: 0.8, bassLevel: 0.051, noteLeft: 0.078, noteRight: 0.078, noteLeftA: 0.078, noteRightA: 0.078, pressure: 0.5, glow: 1.5, brightness: 0.7 };
 const FX_DISPLAY_LATENCY = 0.025; // le temps qu'une image calculée apparaisse à l'écran
 // Retard de la position de lecture (currentTime) sur ce que voit l'analyse : 0 à 8 ms sur la machine de
 // développement, mesuré sur des coups à instants connus. Ce n'est qu'un point de départ : il est
@@ -846,6 +853,7 @@ async function analyseSamples(channels, duration, inspect = null, options = {}) 
     levels.melodySide = hpss.melodySide[i];
     levels.melodyPitch = hpss.melodyPitch[i];
     levels.melodyVoiced = hpss.melodyVoiced[i];
+    levels.melodyClarity = hpss.melodyClarity[i];
     levels.printL = hpss.printL.subarray(i * FX_PRINT_BANDS, (i + 1) * FX_PRINT_BANDS);
     levels.printP = hpss.printP.subarray(i * FX_PRINT_BANDS, (i + 1) * FX_PRINT_BANDS);
   });
@@ -880,6 +888,13 @@ function trackTimeline(frames, profile, inspect = null) {
     channels.noteLeftA[i] = o.noteLeft;
     channels.noteRightA[i] = o.noteRight;
   });
+  const voice = profile.stem ? null : fxVoicePresence(frames);
+  if (voice) channels.voicePresence = voice;
+  const dreamy = fxDreamy(frames, voice);
+  if (dreamy) channels.dreamy = dreamy;
+  const lift = profile.stem ? null : fxLift(frames);
+  if (lift) channels.lift = lift;
+  channels.bassLevel = fxBassLevel(frames);
   // Le morceau étant connu d'avance, le nombre de pulsations par seconde se compte sur ±1 s autour
   // de chaque instant : la limite de flashs s'applique dès le premier coup d'un passage dense.
   const half = Math.round(1 / FX_STEP);
@@ -1250,6 +1265,149 @@ function fxPercussionPattern(frames, profile) {
   });
 }
 
+// ---------- Présence de la voix (pré-analyse) ----------
+// Tant que la voix chante, le halo de droite reste doucement allumé (les notes y ajoutent leur éclat).
+// Sur le mix seul, un modèle (FX_VOICE_MODEL, fx-voice-model.js, appris contre la piste voix séparée par
+// HT-Demucs) lit toutes les 0,1 s le spectre par bandes, sa part tenue (harmonique) et la netteté de la
+// mélodie, moyennés sur ±0,1 s et ±0,5 s. Il classe bien les moments chantés d'un morceau jamais vu (AUC
+// 0,83) mais son niveau varie d'un morceau à l'autre : on le lit par rapport au morceau (ses moments les
+// plus probables s'allument), atténué si le morceau entier en a peu (instrumental).
+
+// Matrice (n × colonnes) des moyennes glissantes sur ±half images de `rows` (tableaux de même longueur).
+function fxSlidingMeans(rows, half) {
+  const n = rows.length, width = rows[0].length, sums = new Float64Array((n + 1) * width);
+  for (let i = 0; i < n; i++) for (let k = 0; k < width; k++) sums[(i + 1) * width + k] = sums[i * width + k] + rows[i][k];
+  return (i) => {
+    const a = Math.max(0, i - half), z = Math.min(n, i + half + 1);
+    return Array.from({ length: width }, (_, k) => (sums[z * width + k] - sums[a * width + k]) / (z - a));
+  };
+}
+
+// Probabilité que la voix chante, toutes les `step` images : { at (indices d'images), p }.
+function fxVoiceProbabilities(frames) {
+  const { step, halves, bands: [from, to] } = FX_VOICE_MODEL;
+  const rows = frames.map((f) => {
+    const L = Array.from(f.printL.subarray(from, to)), P = f.printP.subarray(from, to);
+    const mean = L.reduce((s, v) => s + v, 0) / L.length;
+    return [...L.map((v) => v - mean), ...L.map((v, k) => v - P[k]), mean, f.melodyClarity || 0, f.melodyVoiced || 0];
+  });
+  const near = fxSlidingMeans(rows, halves[0]), wide = fxSlidingMeans(rows, halves[1]);
+  const at = [], p = [];
+  for (let i = 0; i < frames.length; i += step) { at.push(i); p.push(fxTrees(FX_VOICE_MODEL, [...near(i), ...wide(i)])); }
+  return { at, p };
+}
+
+// → Float32Array : présence de la voix, de 0 à 1, pour chaque image (ou null sans le modèle).
+function fxVoicePresence(frames) {
+  if (typeof FX_VOICE_MODEL === 'undefined' || !frames[0]?.printL || frames.length < 60) return null;
+  const { at, p } = fxVoiceProbabilities(frames);
+  const sorted = Float64Array.from(p).sort(), q = (f) => sorted[Math.floor(f * (sorted.length - 1))];
+  const lo = q(0.3), hi = q(0.85), voiced = smoothstep(0.15, 0.4, hi);
+  const out = new Float32Array(frames.length);
+  let level = 0;
+  for (let i = 0, j = 0; i < frames.length; i++) {
+    while (j + 1 < at.length && at[j + 1] <= i) j++;
+    const k = Math.min(at.length - 1, j + 1), f = at[k] > at[j] ? (i - at[j]) / (at[k] - at[j]) : 0;
+    const target = smoothstep(lo, Math.max(hi, lo + 1e-3), p[j] * (1 - f) + p[k] * f) * voiced;
+    level = follow(level, target, FX_STEP, 0.15, 0.5); // s'allume en ~0,15 s, s'éteint en ~0,5 s
+    out[i] = level;
+  }
+  return out;
+}
+
+// ---------- Passages rêveurs (pré-analyse) ----------
+// Un pré-refrain doux et plein, un couplet mélodique : la batterie s'efface presque (moins de ~40 % des
+// coups habituels du morceau, sur ±2 s) pendant que la voix porte le passage. Sur Hootie Frutti, les deux
+// pré-refrains (0:40, 1:32) : de ~6 coups/s à 1,5, la voix au plus haut du morceau, le niveau inchangé.
+// `voice` : présence de la voix (fxVoicePresence). → Float32Array de 0 à 1, ou null.
+function fxDreamy(frames, voice) {
+  if (!voice || !frames[0]?.printL) return null;
+  const n = frames.length, half = Math.round(2 / FX_STEP);
+  const sums = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) sums[i + 1] = sums[i] + (frames[i].percHit ? 1 : 0);
+  const rate = Float32Array.from({ length: n }, (_, i) => {
+    const a = Math.max(0, i - half), z = Math.min(n, i + half + 1);
+    return (sums[z] - sums[a]) / ((z - a) * FX_STEP);
+  });
+  const usual = Float32Array.from(rate).sort()[Math.floor(0.6 * (n - 1))]; // coups/s habituels du morceau
+  // Le son glisse des graves vers les médiums (la voix, les nappes, les accords portent le passage, la 808
+  // et le kick se retirent) : médiums moins graves de l'empreinte du son (voir hpssFeatures), sur ±2 s,
+  // par rapport au reste du morceau. Pré-refrains de Hootie Frutti, pont de Bag Bad Back : +1 σ.
+  const avg = (f, a, b) => { let s = 0; for (let k = a; k <= b; k++) s += f.printL[k]; return s / (b - a + 1); };
+  const tiltSums = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) tiltSums[i + 1] = tiltSums[i] + avg(frames[i], 9, 16) - avg(frames[i], 1, 6);
+  const tilt = Float32Array.from({ length: n }, (_, i) => {
+    const a = Math.max(0, i - half), z = Math.min(n, i + half + 1);
+    return (tiltSums[z] - tiltSums[a]) / (z - a);
+  });
+  const margin = Math.round(10 / FX_STEP), body = tilt.subarray(Math.min(margin, n >> 2), Math.max(n - margin, (3 * n) >> 2));
+  const middle = Float32Array.from(body).sort()[body.length >> 1];
+  const spread = Math.sqrt(body.reduce((s, v) => s + (v - middle) ** 2, 0) / body.length) || 1;
+  const out = new Float32Array(n);
+  let level = 0;
+  for (let i = 0; i < n; i++) {
+    const fewHits = usual >= 1 ? 1 - smoothstep(0.3, 0.55, rate[i] / usual) : 0;
+    const warmer = Math.min(1, Math.max(0, ((tilt[i] - middle) / spread - 0.6) / 0.8));
+    const target = Math.max(fewHits, warmer) * smoothstep(0.45, 0.75, voice[i]);
+    level = follow(level, target, FX_STEP, 0.8, 1); // l'ambiance entre et sort en ~1 s
+    out[i] = level;
+  }
+  return out;
+}
+
+// ---------- Puissance de la basse, d'instant en instant (pré-analyse) ----------
+// Sur une basse lourde, le contour vibre avec elle : chaque coup de 808, chaque note de basse le fait
+// onduler. Puissance de la bande « sub » sur ~100 ms, de −6 à +6 dB autour de sa médiane dans le morceau.
+// → Float32Array de 0 à 1.
+function fxBassLevel(frames) {
+  const n = frames.length, span = 6, margin = Math.round(10 / FX_STEP);
+  const sums = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) sums[i + 1] = sums[i] + (frames[i].sub || 0) ** 2;
+  const db = Float32Array.from({ length: n }, (_, i) => {
+    const a = Math.max(0, i - span);
+    return 10 * Math.log10((sums[i + 1] - sums[a]) / (i + 1 - a) + 1e-18);
+  });
+  const body = db.subarray(Math.min(margin, n >> 2), Math.max(n - margin, (3 * n) >> 2));
+  const usual = Float32Array.from(body).sort()[body.length >> 1];
+  const out = new Float32Array(n);
+  let level = 0;
+  for (let i = 0; i < n; i++) {
+    level = follow(level, smoothstep(usual - 6, usual + 6, db[i]), FX_STEP, 0.03, 0.12);
+    out[i] = level;
+  }
+  return out;
+}
+
+// ---------- Passages aigus (pré-analyse) ----------
+// Un passage mémorable où la mélodie monte nettement au-dessus de sa hauteur habituelle (le passage aigu
+// de Good Boy, 0:44, revenu à 1:39) : la médiane de la hauteur de la mélodie sur ±2 s dépasse celle du
+// morceau d'au moins 2,5 demi-tons, et fait partie des passages les plus aigus du morceau (20 % du temps
+// au plus) — sur 31 morceaux, 8 % d'un morceau en moyenne, 18 % au plus. Le haut du lecteur s'éclaire.
+// → Float32Array de 0 à 1, ou null.
+function fxLift(frames) {
+  const n = frames.length, half = Math.round(2 / FX_STEP), step = 6, margin = Math.round(10 / FX_STEP);
+  if (n < 2 * margin + 60 || frames[0].melodyPitch === undefined) return null;
+  const usualPitches = [];
+  for (let i = margin; i < n - margin; i++) if (frames[i].melodyVoiced > 0) usualPitches.push(frames[i].melodyPitch);
+  if (usualPitches.length < 60) return null;
+  const usual = fxMedian(usualPitches), rise = [];
+  for (let i = 0; i < n; i += step) {
+    const a = Math.max(0, i - half), z = Math.min(n, i + half + 1), sung = [];
+    for (let k = a; k < z; k++) if (frames[k].melodyVoiced > 0) sung.push(frames[k].melodyPitch);
+    rise.push(sung.length >= 0.3 * (z - a) ? fxMedian(sung) - usual : -Infinity);
+  }
+  const finite = rise.filter(Number.isFinite).sort((u, w) => u - w);
+  if (!finite.length) return null;
+  const top = Math.max(2.5, finite[Math.floor(0.8 * (finite.length - 1))]); // les 20 % les plus aigus
+  const out = new Float32Array(n);
+  let level = 0;
+  for (let i = 0; i < n; i++) {
+    level = follow(level, smoothstep(top - 0.5, top + 1.5, rise[Math.floor(i / step)]), FX_STEP, 0.8, 1.2);
+    out[i] = level;
+  }
+  return out;
+}
+
 // Durée d'un temps (s) d'après la régularité des pulsations, ou null sans rythme net : autocorrélation
 // des attaques de la pulsation entre 0,3 et 1 s, ramenée entre 80 et 150 BPM.
 function trackBeat(pulse) {
@@ -1315,17 +1473,17 @@ function trackProfile(frames, dt) {
     levels.rhythmic = state;
   });
 
-  // 2e passe avec ces références : la basse en contraste. Le halo s'allume quand la basse est plus
-  // lourde que d'habitude POUR CE MORCEAU (au-delà de son 65e centile), pleinement à son 95e : en pop,
-  // où une basse est presque toujours là, il marque les passages lourds au lieu de tourner sans cesse.
+  // 2e passe avec ces références : la basse en contraste. Le contour s'allume dès que la basse tenue
+  // atteint son niveau médian POUR CE MORCEAU, pleinement à son 90e centile : une chanson qui joue sur
+  // une basse riche d'un bout à l'autre (WDA, Switchblade, Setsuna Hanabi) l'allume un tiers du temps.
   const feel = createFeel();
   feel.reset(profile);
   const steady = [];
   run(feel, (o) => steady.push(o.steadyPressure));
-  profile.bassFrom = percentile(steady, 0.65);
+  profile.bassFrom = percentile(steady, 0.5);
   // force d'une attaque frappée « nette » pour ce morceau (percussion générique, voir update)
   profile.percRef = percentile(frames.map((l) => l.logPerc ?? 0), 0.75);
-  profile.bassTo = Math.max(percentile(steady, 0.95), profile.bassFrom + 0.2);
+  profile.bassTo = Math.max(percentile(steady, 0.9), profile.bassFrom + 0.2);
   return profile;
 }
 
@@ -1400,33 +1558,61 @@ function fxPalette(themeName, base, brightness) {
     : { color: bright, halo, accent: fxMix(dark, bright, 0.1), note: fxMix(bright, white, 0.45) };
 }
 
+// Voix : un seul halo, qui glisse d'un côté à l'autre (~0,6 s) quand la mélodie change de sens — vers la
+// droite quand elle monte, vers la gauche quand elle descend — au lieu de s'éteindre d'un côté pour
+// s'allumer de l'autre. Le nouveau sens doit tenir ~0,35 s : une mélodie qui monte et descend à chaque
+// note ne fait pas traverser la barre sans cesse. `state` garde sa position d'une image à l'autre.
+// Mouvements réduits : il change de côté sans traverser.
+function fxVoiceSweep(state, v, dt, reduced) {
+  const side = Math.abs(v.noteRight - v.noteLeft) > 0.05 ? (v.noteRight > v.noteLeft ? 1 : 0) : state.target;
+  state.held = side === state.candidate ? (state.held || 0) + dt : 0;
+  state.candidate = side;
+  if (side !== state.target && state.held >= 0.35) state.target = side;
+  state.pos = reduced ? state.target : follow(state.pos, state.target, dt, 0.25, 0.25);
+  v.voice = Math.max(v.noteLeft, v.noteRight);
+  v.voicePos = state.pos;
+}
+
 // Pose les valeurs d'effets sur un élément .fx-surface (lecteur ou aperçu).
 // `v` : { pulse, percHit, pressure, glow, noteLeft, noteRight, brightness } déjà dosés ;
 // `base` : voir fxBaseColor.
 function applyFx(el, themeName, base, v, now) {
   const p = fxPalette(themeName, base, v.brightness);
   el.style.setProperty('--fx-note-color', p.note.join(' '));
-  // La voix : un large halo qui entre par la droite (la gauche est réservée au rythme), à chaque note,
-  // qu'elle monte ou descende ; vif à l'attaque, il s'élargit en s'éteignant.
-  const voice = Math.max(v.noteLeft, v.noteRight);
-  el.style.setProperty('--fx-voice', voice.toFixed(3));
-  el.style.setProperty('--fx-voice-reach', `${Math.round(40 + (1 - Math.min(1, voice)) * 25)}%`);
+  // La voix : un halo, à sa position (0 à gauche, 1 à droite, voir fxVoiceSweep), doucement allumé tant
+  // qu'elle chante, avec un éclat à chaque note ; vif à l'attaque, il s'élargit en s'éteignant.
+  const notes = v.voice ?? Math.max(v.noteLeft, v.noteRight), pos = v.voicePos ?? (v.noteRight >= v.noteLeft ? 1 : 0);
+  const voice = Math.min(1, 0.4 * (v.voicePresence || 0) + notes);
+  // en traversant, le halo s'estompe (il passe derrière le titre et les boutons)
+  el.style.setProperty('--fx-voice', (voice * (1 - 0.6 * Math.sin(Math.PI * pos))).toFixed(3));
+  el.style.setProperty('--fx-voice-pos', pos.toFixed(3));
+  el.style.setProperty('--fx-voice-reach', `${Math.round(25 + (1 - voice) * 20)}%`);
   // Mélodie de fond : la teinte du halo, plus profonde quand elle est sombre, plus claire quand elle brille
   // (une teinte décalée de celle du halo d'énergie, pour ne pas se confondre avec lui ni avec la basse)
   const melody = FX_THEMES[themeName]?.colorless ? [220, 220, 220] : fxShift(p.halo, 60, 0.7, 0.6);
   el.style.setProperty('--fx-melody', (v.melody || 0).toFixed(3));
+  // Passage aigu : une lumière claire, la teinte du halo éclaircie, qui descend du haut du lecteur
+  el.style.setProperty('--fx-lift', (v.lift || 0).toFixed(3));
+  el.style.setProperty('--fx-lift-color', (FX_THEMES[themeName]?.colorless ? [255, 255, 255] : fxMix(p.halo, [255, 255, 255], 0.55)).join(' '));
   el.style.setProperty('--fx-melody-color', fxMix(fxMix(melody, [0, 0, 0], 0.35), fxMix(melody, [255, 255, 255], 0.55), v.melodyTone ?? 0.5).join(' '));
   el.dataset.fxTheme = FX_THEMES[themeName] ? themeName : 'aurora';
   el.style.setProperty('--fx-pulse', v.pulse.toFixed(3));
   el.style.setProperty('--fx-pulse-glow', v.pulseGlow.toFixed(3));
   el.style.setProperty('--fx-perc-hit', v.percHit.toFixed(3));
   el.style.setProperty('--fx-pressure', v.pressure.toFixed(3));
-  el.style.setProperty('--fx-glow', v.glow.toFixed(3));
-  el.style.setProperty('--fx-color', p.color.join(' '));
-  el.style.setProperty('--fx-halo-color', p.halo.join(' '));
   // Basse tenue : la couleur chaude de la pochette, rendue lumineuse (blanc en Monochrome)
   const warm = FX_THEMES[themeName]?.colorless ? [255, 255, 255] : fxShift(v.warm || FX_WARM_FALLBACK, 0, 0.85, 0.62);
   el.style.setProperty('--fx-accent', warm.join(' '));
+  // Passage rêveur (voir fxDreamy) : le halo d'ambiance reste allumé et respire lentement (~4 s), dans
+  // les tons chauds de la pochette
+  const dreamy = v.dreamy || 0, breath = 0.8 + 0.2 * Math.sin((2 * Math.PI * now) / 4);
+  el.style.setProperty('--fx-glow', Math.max(v.glow, 0.7 * dreamy * breath).toFixed(3));
+  // … et des étincelles discrètes scintillent sur tout le lecteur (animées seulement pendant le passage)
+  el.style.setProperty('--fx-dreamy', dreamy.toFixed(3));
+  el.style.setProperty('--fx-spark-color', fxMix(warm, [255, 255, 255], 0.6).join(' '));
+  el.classList.toggle('fx-dreamy-on', dreamy > 0.01);
+  el.style.setProperty('--fx-color', p.color.join(' '));
+  el.style.setProperty('--fx-halo-color', fxMix(p.halo, warm, 0.65 * dreamy).join(' '));
   // Pochette : sa lueur de percussion est de sa propre couleur, comme une lumière derrière l'image
   el.style.setProperty('--fx-cover-color', (v.coverColor || p.color).join(' '));
   // Vacillement des braises : sinusoïdes lentes et désaccordées, pour ne pas sembler mécanique.
@@ -1454,21 +1640,29 @@ const FX_SOUND_WEIGHTS = {
 };
 
 function fxDose(fx, config) {
-  const pulse = config.pulse ? fxLevel(fx.pulse, config.levels.pulse) : 0;
+  // passage rêveur : le rythme se fait plus discret (−40 %), l'ambiance prend le relais
+  const calm = 1 - 0.4 * (fx.dreamy || 0);
+  const pulse = config.pulse ? fxLevel(fx.pulse, config.levels.pulse) * calm : 0;
   const rate = fx.pulseRate || 0;
   // progressif plutôt qu'en bascule : un morceau qui oscille autour du seuil ne clignote pas
   const pulseGlow = 1 - 0.4 * smoothstep(4.5, 5, rate);
-  const pressure = config.pressure ? fxLevel(fx.pressure, config.levels.pressure) : 0;
+  // la basse tenue vibre avec la puissance de la basse (fxBassLevel) : 65 % au creux, 100 % au plus fort
+  const pressure = config.pressure ? fxLevel(fx.pressure * (0.65 + 0.35 * (fx.bassLevel ?? 1)), config.levels.pressure) : 0;
   const glow = config.halo ? fxLevel(fx.glow, config.levels.halo) : 0;
   const notes = config.notes ? config.levels.notes : 0;
   return {
     pulse, pulseGlow, pressure, glow, brightness: fx.brightness,
     // percussions (la pochette s'éclaire) avec le rythme
-    percHit: config.pulse ? fxLevel(fx.pulseHigh || 0, config.levels.pulse) * pulseGlow : 0,
+    percHit: config.pulse ? fxLevel(fx.pulseHigh || 0, config.levels.pulse) * pulseGlow * calm : 0,
+    // passage rêveur, avec le halo d'ambiance
+    dreamy: config.halo ? Math.min(1, (fx.dreamy || 0) * config.levels.halo) : 0,
     // mélodie de fond (pistes séparées seulement) avec la voix, réglage « Voix et mélodie »
     melody: config.notes ? fxLevel(fx.melody || 0, config.levels.notes) * pulseGlow : 0,
     melodyTone: fx.melodyTone ?? 0.5,
     noteLeft: fxLevel(fx.noteLeft, notes), noteRight: fxLevel(fx.noteRight, notes),
+    voicePresence: fxLevel(fx.voicePresence || 0, notes),
+    // passage aigu (le haut du lecteur s'éclaire), avec la voix et la mélodie
+    lift: Math.min(1, (fx.lift || 0) * notes),
   };
 }
 
@@ -1536,7 +1730,7 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
   let frame = 0;
   let last = 0;
   const feel = createFeel();
-  const idle = { pulse: 0, pulseHigh: 0, melody: 0, melodyTone: 0.5, pulseRate: 0, pressure: 0, glow: 0, noteLeft: 0, noteRight: 0, brightness: 0.5 };
+  const idle = { pulse: 0, pulseHigh: 0, voicePresence: 0, dreamy: 0, lift: 0, melody: 0, melodyTone: 0.5, pulseRate: 0, pressure: 0, glow: 0, noteLeft: 0, noteRight: 0, brightness: 0.5 };
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let fx = idle;
   let lastEnergyRef = FX_ENERGY_FLOOR;
@@ -1743,10 +1937,10 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     if (ease > 0 && !audio.paused) {
       ease = Math.max(0, ease - dt / 0.8);
       fx = { ...fx };
-      for (const k of ['glow', 'pressure', 'brightness', 'melody']) fx[k] = follow(prev[k] || 0, fx[k] || 0, dt, 0.3, 0.3);
+      for (const k of ['glow', 'pressure', 'brightness', 'melody', 'voicePresence', 'dreamy', 'lift']) fx[k] = follow(prev[k] || 0, fx[k] || 0, dt, 0.3, 0.3);
     }
     render(dt);
-    const faded = ['pulse', 'pulseHigh', 'melody', 'pressure', 'glow', 'noteLeft', 'noteRight'].every((k) => !(fx[k] >= 0.005));
+    const faded = ['pulse', 'pulseHigh', 'voicePresence', 'dreamy', 'lift', 'melody', 'pressure', 'glow', 'noteLeft', 'noteRight'].every((k) => !(fx[k] >= 0.005));
     if (audio.paused && faded) stop();
   }
 
@@ -1754,6 +1948,7 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
   // Mouvements réduits : la pulsation devient un fondu (montée ~60 ms, retombée ~200 ms) plutôt
   // qu'un flash, qui retombe quand même entre deux coups pour que le rythme reste lisible.
   let shownPulse = 0, shownHigh = 0, shownMelody = 0, shownGlow = 1;
+  const voiceSweep = { pos: 1, target: 1 };
   function render(dt = FX_STEP) {
     const v = fxDose(fx, config);
     // La sécurité change en douceur (~0,4 s), jamais d'une image à l'autre
@@ -1766,6 +1961,7 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
       v.percHit = shownHigh = follow(shownHigh, v.percHit, dt, 0.06, 0.15);
       v.melody = shownMelody = follow(shownMelody, v.melody, dt, 0.06, 0.2);
     }
+    fxVoiceSweep(voiceSweep, v, dt, reducedMotion.matches);
     v.warm = warm;
     v.coverColor = color;
     applyFx(bar, config.theme, fxBaseColor(config, color), v, performance.now() / 1000);

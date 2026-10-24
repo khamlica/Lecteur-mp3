@@ -1,0 +1,603 @@
+/* Le lecteur en plein écran, pour le téléphone (player.html) : la barre du bureau (style.css) dépliée en hauteur,
+   grande pochette au milieu, commandes sous le pouce. Les effets (fx-themes.css) prennent tout l'écran : le fond
+   flou aux couleurs de la pochette, la basse qui monte du bas, le reflet qui fait le tour du bord. */
+
+:root {
+  --inset-top: 0px;
+  --inset-bottom: 0px;
+  --inset-left: 0px;
+  --inset-right: 0px;
+}
+
+html,
+body {
+  font-family: "Google Sans", Roboto, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overscroll-behavior: none;
+}
+
+#bar {
+  position: fixed;
+  inset: 0;
+  height: auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  justify-items: center;
+  align-items: center;
+  gap: 0;
+  padding: calc(var(--inset-top) + 6px) calc(var(--inset-right) + 22px) calc(var(--inset-bottom) + 20px) calc(var(--inset-left) + 22px);
+}
+
+/* ---------- En haut : réduire, YouTube, effets, dossier ---------- */
+
+#window-btns {
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  align-self: start;
+  gap: 4px;
+}
+
+#window-btns #close {
+  margin-right: auto;
+}
+
+#window-btns .btn.small,
+.row.bottom .btn.small {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+#window-btns .btn.small svg,
+.row.bottom .btn.small svg {
+  width: 23px;
+  height: 23px;
+}
+
+#close:hover {
+  background: transparent;
+  color: var(--fg-faint);
+}
+
+/* ---------- Pochette ---------- */
+
+#cover {
+  width: min(100%, 46vh, 440px);
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 18px;
+}
+
+#cover .edit {
+  width: 36px;
+  height: 36px;
+}
+
+/* pas de survol au doigt : rien ne reste assombri après un appui */
+#cover:hover::before,
+#cover:hover img {
+  filter: none;
+}
+
+#cover:hover .edit {
+  opacity: 0;
+}
+
+#cover:active::before,
+#cover:active img {
+  filter: brightness(0.7);
+}
+
+/* ---------- Titre, avancement, commandes ---------- */
+
+#body {
+  width: 100%;
+  max-width: 560px;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+#info {
+  padding: 0 2px;
+}
+
+#title {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+}
+
+#artist {
+  margin-top: 2px;
+  font-size: 15.5px;
+  line-height: 21px;
+}
+
+/* un titre trop long défile tout seul (pas de survol au doigt) */
+#title.long,
+#artist.long {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  animation: text-scroll var(--scroll-time, 6s) ease-in-out 1.5s infinite alternate;
+}
+
+#info.clickable #artist {
+  color: var(--accent);
+}
+
+/* le champ YouTube remplace le titre, comme sur le bureau */
+#yt {
+  width: 100%;
+}
+
+.yt-field {
+  height: 46px;
+  padding: 0 16px 0 14px;
+  border-radius: 23px;
+  gap: 10px;
+}
+
+.yt-field svg {
+  width: 19px;
+  height: 19px;
+}
+
+#yt-url {
+  font-size: 16px;
+}
+
+#yt-status {
+  margin-top: 6px;
+  padding-left: 16px;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.row.seek {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.times {
+  display: flex;
+  justify-content: space-between;
+}
+
+.time {
+  width: auto;
+  font-size: 12.5px;
+}
+
+#transport {
+  justify-content: space-between;
+  gap: 0;
+  padding: 0 4px;
+}
+
+#transport .btn {
+  width: 56px;
+  height: 56px;
+}
+
+#transport .btn svg {
+  width: 28px;
+  height: 28px;
+}
+
+#transport .btn.play {
+  width: 76px;
+  height: 76px;
+}
+
+#transport .btn.play svg {
+  width: 34px;
+  height: 34px;
+}
+
+#transport .btn.active::after {
+  bottom: 6px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+}
+
+.row.bottom {
+  gap: 6px;
+  margin: 0 -10px;
+}
+
+#volume {
+  flex: 1;
+  width: auto;
+}
+
+/* pas de survol : un appui éclaire à peine le bouton */
+.btn:hover {
+  background: transparent;
+  color: var(--fg-dim);
+}
+
+.btn.active:hover {
+  color: var(--accent);
+}
+
+.btn.play:hover {
+  background: rgba(255, 255, 255, 0.92);
+  color: #15161c;
+}
+
+.btn:active {
+  background: var(--hover);
+}
+
+.btn.play:active {
+  background: #fff;
+}
+
+#window-btns .btn:hover {
+  color: var(--fg-faint);
+}
+
+#window-btns .btn.active:hover,
+body.yt #window-btns #youtube {
+  color: var(--accent);
+}
+
+/* ---------- Curseurs : plus épais et toujours une poignée, pour le doigt ---------- */
+
+input[type="range"] {
+  height: 30px;
+}
+
+input[type="range"]::-webkit-slider-runnable-track,
+input[type="range"]:hover::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+}
+
+input[type="range"]:active::-webkit-slider-runnable-track {
+  height: 6px;
+}
+
+input[type="range"]::-webkit-slider-thumb,
+input[type="range"]:hover::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  transform: scale(1);
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  margin-top: -4px;
+  transform: scale(1.25);
+}
+
+/* ---------- En largeur (téléphone couché, tablette) : pochette à gauche ---------- */
+
+@media (orientation: landscape) and (max-height: 600px) {
+  #bar {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 28px;
+    padding-top: calc(var(--inset-top) + 4px);
+    padding-bottom: calc(var(--inset-bottom) + 12px);
+  }
+
+  #window-btns {
+    grid-column: 1 / -1;
+  }
+
+  #cover {
+    width: auto;
+    height: min(100%, 78vh);
+  }
+
+  #body {
+    gap: 8px;
+  }
+}
+
+/* ---------- Effets à l'échelle de l'écran ---------- */
+
+/* Le fond flou : la palette de la pochette (24 × 6 pixels) étirée sur tout l'écran. Floutée par le navigateur à
+   cette taille, elle déborderait de mémoire graphique (deux couches plus grandes que l'écran, à 2,6 × de densité :
+   la page cesse de se dessiner). Ici, une version adoucie une fois pour toutes (--fx-palette-soft, after.js),
+   simplement agrandie ; un seul voile, qui dérive lentement (transformations seulement, sans redessiner). */
+.fx-palette::before {
+  inset: 0;
+  background-image: var(--fx-palette-soft, var(--fx-palette));
+  background-size: 100% 100%;
+  transform: scale(1.35);
+  filter: saturate(1.2) sepia(calc(var(--fx-dreamy) * 0.55)) brightness(var(--fx-palette-dim));
+}
+
+.fx-surface.fx-palette-on .fx-palette::before {
+  background-size: 100% 100%;
+}
+
+.fx-palette::after {
+  display: none;
+}
+
+.fx-surface.fx-halo-on .fx-palette::before {
+  animation: fx-water-mobile 9s ease-in-out infinite alternate;
+}
+
+@keyframes fx-water-mobile {
+  0% { transform: scale(1.35) translate(6%, 4%); }
+  50% { transform: scale(1.45) translate(-3%, -5%) rotate(1.5deg); }
+  100% { transform: scale(1.4) translate(-6%, 3%) rotate(-1deg); }
+}
+
+/* Verre liquide : la palette plus vive, et elle s'illumine sur les attaques dans un passage rêveur */
+.fx-surface[data-fx-base="glass"] .fx-palette::before {
+  filter: saturate(calc(1.5 + 0.3 * var(--fx-dreamy)))
+    brightness(calc(var(--fx-palette-dim) * (1 + 0.6 * var(--fx-dreamy) * var(--fx-grain-beat))));
+}
+
+/* passage aigu : seulement le haut de l'écran (une couche de la taille de l'écran de moins) */
+.fx-lift {
+  bottom: auto;
+  height: 160px;
+}
+
+/* le bord du verre suit les coins arrondis de l'écran */
+.fx-surface[data-fx-base="glass"]::after {
+  border-radius: 28px;
+  padding: 1.5px;
+}
+
+/* la voix éclaire la pochette par-derrière, à l'échelle de sa taille */
+.fx-surface[data-fx-base="glass"] .fx-cover {
+  box-shadow:
+    0 calc(10px - var(--fx-press) * 5px) calc(36px - var(--fx-press) * 14px) rgb(0 0 0 / 0.42),
+    0 0 calc(18px + var(--fx-cover-light) * 44px) calc(var(--fx-cover-light) * 4px)
+      rgb(var(--fx-glint) / min(0.45, calc(var(--fx-cover-light) * 0.45)));
+}
+
+/* passage aigu : la lueur descend un peu plus bas que sur une barre */
+.fx-surface[data-fx-base="glass"] .fx-lift {
+  background:
+    linear-gradient(90deg, transparent 4%, rgb(var(--fx-glint) / min(0.9, calc(var(--fx-lift) * 0.9))) 50%, transparent 96%)
+      top / 100% 1.5px no-repeat,
+    radial-gradient(60% 100% at 50% 0%, rgb(var(--fx-glint) / min(0.22, calc(var(--fx-lift) * 0.22))), transparent)
+      top / 100% 90px no-repeat;
+}
+
+.fx-bass {
+  --fx-bass-band: 40px;
+}
+
+/* SAVAGE : le cadre de chrome est dessiné pour la barre du bureau (540 × 88) ; étiré sur l'écran entier il
+   serait déformé. Dans l'app, la base Verre liquide et son bord ; le cadre habille le widget (PlayerWidget). */
+.fx-surface:is([data-fx-theme="savage"], [data-fx-theme="savage-meshy"]):not(.preview) .fx-frame {
+  display: none;
+}
+
+.fx-surface:is([data-fx-theme="savage"], [data-fx-theme="savage-meshy"]):not(.preview)::after {
+  display: block;
+}
+
+/* ---------- Panneaux : menus, réglages, choix du dossier (host.js) ---------- */
+
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.layer .backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(6 8 14 / 0.5);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.layer.open .backdrop {
+  opacity: 1;
+}
+
+.layer .sheet {
+  position: absolute;
+  left: calc(var(--inset-left) + 8px);
+  right: calc(var(--inset-right) + 8px);
+  bottom: calc(var(--inset-bottom) + 8px);
+  border-radius: 22px;
+  overflow: hidden;
+  background: rgb(16 18 28 / 0.55);
+  -webkit-backdrop-filter: blur(28px) saturate(1.3);
+  backdrop-filter: blur(28px) saturate(1.3);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.45), inset 0 0 0 1px rgb(255 255 255 / 0.12);
+  transform: translateY(24px);
+  opacity: 0;
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.18s;
+}
+
+.layer.open .sheet {
+  transform: none;
+  opacity: 1;
+}
+
+.layer iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+/* menu : la feuille prend la hauteur de ce qu'il affiche (--menu-height, voir menuApi) */
+.menu-layer .sheet {
+  height: min(var(--menu-height, 300px), calc(100% - var(--inset-top) - var(--inset-bottom) - 40px));
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* réglages des effets, édition du morceau : tout l'écran */
+.panel-layer .sheet {
+  top: calc(var(--inset-top) + 8px);
+}
+
+/* ---------- Choix du dossier ou de la piste ---------- */
+
+.sheet-layer .sheet {
+  top: calc(var(--inset-top) + 48px);
+  display: flex;
+  flex-direction: column;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.sheet-layer header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px 8px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+}
+
+.sheet-layer header .btn.small {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.sheet-layer header .btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.where {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+#browser-name {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#browser-path {
+  font-size: 12px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+#browser-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+#browser-list .entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+}
+
+#browser-list .entry:active {
+  background: rgb(255 255 255 / 0.1);
+}
+
+#browser-list .entry svg {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: var(--fg-dim);
+}
+
+#browser-list .entry.file svg {
+  color: var(--accent);
+}
+
+#browser-list .entry span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#browser-list .entry .chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--fg-faint);
+}
+
+#browser-list .empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--fg-faint);
+  font-size: 14px;
+}
+
+#browser-access {
+  flex: 1;
+  padding: 28px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--fg-dim);
+}
+
+.sheet-layer footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+}
+
+.sheet-layer footer .hint {
+  flex: 1;
+  font-size: 12.5px;
+  line-height: 16px;
+  color: var(--fg-faint);
+}
+
+.action {
+  flex: none;
+  height: 44px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.action.primary {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.92);
+  color: #15161c;
+  font-weight: 600;
+}
+
+[hidden] {
+  display: none !important;
+}

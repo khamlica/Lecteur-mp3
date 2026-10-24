@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+# clé de signature des APK (voir README) : jamais committée
+keystore.properties
+*.jks
+# jeton de mise à jour, ajouté par GitHub Actions
+app/src/main/assets/update-token.json

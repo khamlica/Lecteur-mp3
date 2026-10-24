@@ -1,0 +1,204 @@
+/* Les fenêtres du bureau dans un panneau du lecteur, sur le téléphone (voir child.js) : le verre est celui du
+   panneau (flou d'arrière-plan, host.js / mobile.css), les rangées et les boutons à la taille du doigt. */
+
+html.android,
+html.android body {
+  background: transparent;
+  font-family: "Google Sans", Roboto, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.android .btn:hover,
+html.android .action:hover,
+html.android .link:hover,
+html.android .item:hover {
+  background: inherit;
+}
+
+/* ---------- Menus ---------- */
+
+html.android-menu,
+html.android-menu body {
+  border-radius: 0;
+  height: auto;
+}
+
+html.android-menu #menu {
+  padding: 8px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 15.5px;
+}
+
+html.android-menu .item {
+  height: 48px;
+  padding: 0 14px 0 10px;
+  gap: 12px;
+  border-radius: 12px;
+}
+
+html.android-menu .item:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html.android-menu .item:focus {
+  background: transparent;
+}
+
+html.android-menu .mark {
+  width: 20px;
+  height: 20px;
+}
+
+html.android-menu .mark svg {
+  width: 19px;
+  height: 19px;
+}
+
+html.android-menu .radio.checked .mark::before {
+  width: 8px;
+  height: 8px;
+}
+
+html.android-menu .value {
+  font-size: 13.5px;
+}
+
+html.android-menu .chevron svg,
+html.android-menu .back .mark svg {
+  width: 18px;
+  height: 18px;
+}
+
+html.android-menu .header {
+  height: 34px;
+  padding: 14px 14px 0;
+  font-size: 11.5px;
+}
+
+html.android-menu .sep {
+  margin: 6px 10px;
+}
+
+/* ---------- Réglages des effets, édition du morceau ---------- */
+
+html.android:is(.android-fx-panel, .android-editor),
+html.android:is(.android-fx-panel, .android-editor) body {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+html.android #panel {
+  height: auto;
+  min-height: 100%;
+  padding: 0 20px calc(20px + var(--inset-bottom));
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  gap: 18px;
+}
+
+html.android header {
+  height: 56px;
+  font-size: 17px;
+  flex: none;
+}
+
+html.android header .btn.small {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+html.android header .btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+html.android .action {
+  height: 44px;
+  padding: 0 22px;
+  font-size: 15px;
+}
+
+html.android #status {
+  font-size: 13px;
+}
+
+/* édition : grande pochette, une aide toujours visible (pas de survol) */
+html.android-editor #art {
+  width: min(72vw, 300px);
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 16px;
+}
+
+html.android-editor #art .hint {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  font-size: 12.5px;
+}
+
+html.android-editor .field {
+  font-size: 13px;
+  gap: 7px;
+}
+
+html.android-editor .field input {
+  height: 46px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 16px;
+}
+
+html.android-editor .link {
+  padding: 8px 14px;
+  font-size: 13.5px;
+}
+
+html.android-editor #file-name {
+  font-size: 12px;
+}
+
+/* réglages des effets : cartes de thèmes et curseurs plus grands */
+html.android-fx-panel h2 {
+  font-size: 12px;
+}
+
+html.android-fx-panel .theme {
+  font-size: 14px;
+  padding: 8px 8px 10px;
+  border-radius: 14px;
+}
+
+html.android-fx-panel .segmented button {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+html.android-fx-panel .effect label span {
+  font-size: 15px;
+}
+
+html.android-fx-panel .effect small,
+html.android-fx-panel .hint {
+  font-size: 12.5px;
+  line-height: 17px;
+}
+
+html.android-fx-panel input[type="range"] {
+  height: 32px;
+}
+
+html.android-fx-panel input[type="range"]::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  transform: scale(1);
+}
+
+html.android-fx-panel input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+}

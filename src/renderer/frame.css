@@ -1,0 +1,35 @@
+/* Fenêtre-cadre : un contour qui déborde du lecteur (personnalisation SAVAGE (Meshy)), posé par-dessus lui
+   dans une fenêtre transparente qui laisse passer les clics (voir updateFrameWindow dans main.js). Un reflet
+   en fait le tour, découpé à sa forme exacte, et s'illumine sur les coups de basse, comme dans le lecteur
+   (--fx-rim, --fx-rim-angle, --fx-glint : envoyés par le lecteur à chaque image). */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+#frame {
+  position: absolute;
+  inset: 0;
+  --fx-rim: 0;
+  --fx-rim-angle: 0deg;
+  --fx-glint: 255 255 255;
+  background: var(--frame-img) 0 0 / 100% 100% no-repeat;
+  filter: brightness(calc(0.94 + 0.2 * var(--fx-rim)));
+}
+
+#frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(from var(--fx-rim-angle),
+    rgb(255 255 255 / calc(0.35 + 0.65 * var(--fx-rim))) 0deg,
+    rgb(var(--fx-glint) / calc(0.1 + 0.3 * var(--fx-rim))) 24deg,
+    transparent 60deg, transparent 300deg,
+    rgb(var(--fx-glint) / calc(0.1 + 0.3 * var(--fx-rim))) 336deg,
+    rgb(255 255 255 / calc(0.35 + 0.65 * var(--fx-rim))) 360deg);
+  -webkit-mask: var(--frame-mask) 0 0 / 100% 100% no-repeat;
+  mix-blend-mode: plus-lighter;
+}

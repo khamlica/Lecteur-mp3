@@ -97,6 +97,13 @@ h2 {
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* Contour qui déborde du lecteur (SAVAGE (Meshy)) : l'aperçu montre le cadre entier autour du lecteur
+   miniature, ses épines coupées par la carte (le lecteur occupe 540 × 88 px d'un cadre de 703 × 171,
+   à 82 px du bord gauche et 35 px du haut) */
+.preview[data-fx-theme="savage-meshy"] .fx-frame {
+  inset: -39.8% -15% -54.5% -15.2%;
+}
+
 /* ---------- Couleur ---------- */
 
 .color-row {

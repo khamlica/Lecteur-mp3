@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="hanabi_background">#161821</color>
+    <color name="hanabi_tint">#cc10121c</color>
+</resources>

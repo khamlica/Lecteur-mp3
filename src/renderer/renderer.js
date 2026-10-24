@@ -429,6 +429,7 @@ ui.repeat.addEventListener('click', cycleRepeat);
 const anchorOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
 $('folder').addEventListener('click', () => chooseFolder(undefined, anchorOf($('folder'))));
 ui.fx.addEventListener('click', () => api.showEffectsMenu(anchorOf(ui.fx)));
+ambiance.onFrameFx((fx) => api.frameFx(fx));
 ui.coverImg.addEventListener('load', () => api.reportPlayback({ fxColor: ambiance.setColor(ui.coverImg) }));
 $('cover').addEventListener('click', () => {
   if (current()) api.openEditor(current().path);

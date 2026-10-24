@@ -28,7 +28,7 @@ for (const [name, theme] of Object.entries(FX_THEMES)) {
   card.innerHTML = `
     <div class="preview fx-surface" data-fx-theme="${name}">
       <div class="fx-palette"></div><div class="fx-bass"></div>
-      <div class="fx-lift"></div><div class="fx-sparkles"></div>
+      <div class="fx-lift"></div><div class="fx-sparkles"></div><div class="fx-frame"></div>
       
       <div class="mini-cover fx-cover"></div>
       <div class="lines"><i></i><i></i></div>

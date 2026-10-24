@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- La lumière de la basse qui monte du bas du verre, teintée à la couleur de la pochette (PlayerWidget) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <corners android:radius="18dp" />
+    <gradient android:type="radial" android:centerX="0.5" android:centerY="1.25" android:gradientRadius="140dp"
+        android:startColor="#FFFFFFFF" android:endColor="#00FFFFFF" />
+</shape>

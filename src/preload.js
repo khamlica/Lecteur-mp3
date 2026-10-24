@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   saveState: (partial) => ipcRenderer.send('save-state', partial),
   hideWindow: () => ipcRenderer.send('hide-window'),
   showEffectsMenu: (anchor) => ipcRenderer.send('effects-menu', anchor),
+  frameFx: (fx) => ipcRenderer.send('frame-fx', fx),
   showSoundMenu: () => ipcRenderer.send('sound-menu'),
   reportPlayback: (info) => ipcRenderer.send('playback', info),
   onCommand: (cb) => ipcRenderer.on('command', (_e, cmd, arg) => cb(cmd, arg)),

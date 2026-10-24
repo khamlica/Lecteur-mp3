@@ -32,7 +32,7 @@ const DEFAULTS = {
   fxNotesLevel: 1,
   fxSyncMs: 0,             // avance (+) ou retard (−) des effets sur le son, réglée à l'oreille
   fxSyncByDevice: {},      // la même, retenue pour chaque sortie audio (un casque Bluetooth a son propre retard)
-  fxTheme: 'glass',        // 'glass' | 'aurora' | 'neon' | 'ember' | 'mono' (voir FX_THEMES)
+  fxTheme: 'glass',        // 'glass' | 'savage' | 'savage-meshy' | 'aurora' | 'neon' | 'ember' | 'mono' (voir FX_THEMES)
   fxColorMode: 'theme',    // 'theme' | 'cover' | 'custom'
   fxCustomColor: '#ff7a3d',
   soundFx: 'none',         // effet sonore à l'écoute (voir SOUND_EFFECTS)
@@ -778,6 +778,7 @@ function createWindow() {
     settings.bounds = { x, y };
     saveSettings();
   });
+  win.on('move', () => frameWin && !frameWin.isDestroyed() && frameWin.setBounds(frameBounds(frameSkin || settings.fxTheme)));
 
   // ✕ ou Alt+F4 : on cache au lieu de quitter
   win.on('close', (e) => {
@@ -790,8 +791,12 @@ function createWindow() {
     // Avec le fond acrylic, Electron n'affiche pas toujours la première image : on force un repaint.
     setTimeout(() => !win.isDestroyed() && win.webContents.invalidate(), 50);
     updateTray();
+    updateFrameWindow();
   });
-  win.on('hide', updateTray);
+  win.on('hide', () => {
+    updateTray();
+    updateFrameWindow();
+  });
   // Clic droit sur une zone de déplacement : notre menu à la place du menu système de Windows
   win.on('system-context-menu', (e) => {
     e.preventDefault();
@@ -815,8 +820,72 @@ function startHoverWatcher() {
     if (Math.abs(current - target) < 0.01) return;
     const step = 0.1 * Math.sign(target - current);
     win.setOpacity(Math.abs(target - current) <= 0.1 ? target : current + step);
+    if (frameWin && !frameWin.isDestroyed()) frameWin.setOpacity(win.getOpacity());
   }, 30);
 }
+
+// ---------- Fenêtre-cadre (contour qui déborde du lecteur) ----------
+
+// Une personnalisation dont le contour déborde du lecteur (SAVAGE (Meshy) : le cadre du modèle 3D, ses épines
+// vers l'extérieur) : il est posé dans une fenêtre transparente plus grande, au-dessus du lecteur, qui laisse
+// passer les clics et le suit (déplacement, masquage, fondu). `left`, `top` : position du lecteur dans
+// l'image du cadre (renderer/skins/<nom>-frame.png, 3×), `width`, `height` : taille du cadre (px).
+const FRAME_SKINS = {
+  'savage-meshy': { left: 82, top: 35, width: 703, height: 171 },
+};
+let frameWin = null;
+let frameSkin = null;
+
+function frameBounds(skin) {
+  const b = win.getBounds(), f = FRAME_SKINS[skin];
+  return { x: b.x - f.left, y: b.y - f.top, width: f.width, height: f.height };
+}
+
+function updateFrameWindow() {
+  const skin = FRAME_SKINS[settings.fxTheme] ? settings.fxTheme : null;
+  const wanted = skin && win && !win.isDestroyed() && win.isVisible();
+  if (!wanted) {
+    if (frameWin && !frameWin.isDestroyed()) frameWin.hide();
+    return;
+  }
+  if (!frameWin || frameWin.isDestroyed()) {
+    frameWin = new BrowserWindow({
+      ...frameBounds(skin),
+      parent: win, // toujours au-dessus du lecteur
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      hasShadow: false,
+      resizable: false,
+      movable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      focusable: false,
+      skipTaskbar: true,
+      show: false,
+      webPreferences: { preload: path.join(__dirname, 'frame-preload.js') },
+    });
+    frameWin.setIgnoreMouseEvents(true); // les clics vont au lecteur dessous
+    frameWin.loadFile(path.join(__dirname, 'renderer', 'frame.html'));
+    frameWin.webContents.on('did-finish-load', () => frameWin.webContents.send('frame-skin', frameSkin));
+    frameWin.on('closed', () => { frameWin = null; });
+    frameSkin = null;
+  }
+  if (frameSkin !== skin) {
+    frameSkin = skin;
+    if (!frameWin.webContents.isLoading()) frameWin.webContents.send('frame-skin', skin);
+  }
+  frameWin.setBounds(frameBounds(skin));
+  frameWin.setOpacity(win.getOpacity());
+  if (!frameWin.isVisible()) frameWin.showInactive();
+}
+
+// le reflet du cadre, animé par le lecteur à chaque image
+ipcMain.on('frame-fx', (_e, fx) => {
+  if (frameWin && !frameWin.isDestroyed() && frameWin.isVisible()) frameWin.webContents.send('frame-fx', fx);
+});
+
 
 function showWindow() {
   win.show();
@@ -856,7 +925,7 @@ function send(cmd, arg) {
 // ---------- Effets d'ambiance ----------
 
 // Mêmes noms que FX_THEMES dans renderer/effects.js
-const FX_THEMES = [['glass', 'Verre liquide'], ['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
+const FX_THEMES = [['glass', 'Verre liquide'], ['savage', 'SAVAGE'], ['savage-meshy', 'SAVAGE (Meshy)'], ['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
 
 // Réglages modifiables depuis la fenêtre de personnalisation, avec leurs valeurs admises
 const FX_SETTINGS = {
@@ -897,6 +966,7 @@ function setEffects(partial) {
   send('effects', fxConfig());
   sendFxPanel();
   updateTray();
+  updateFrameWindow();
 }
 
 // ---------- Fenêtre « Personnaliser les effets » ----------

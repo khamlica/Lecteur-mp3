@@ -1566,8 +1566,12 @@ function trackProfile(frames, dt) {
 // `colors` : couleurs propres au thème, pour un son sombre puis brillant ;
 // null pour Aurore, qui prend celles de la pochette.
 
+// `base` : thème dont celui-ci reprend tous les effets (personnalisation : seul le contour change, voir
+// fx-themes.css, data-fx-base et .fx-frame)
 const FX_THEMES = {
   glass: { label: 'Verre liquide', colors: null },
+  savage: { label: 'SAVAGE', colors: null, base: 'glass' },
+  'savage-meshy': { label: 'SAVAGE (Meshy)', colors: null, base: 'glass', overflow: true }, // cadre hors du lecteur (main.js)
   aurora: { label: 'Aurore', colors: null },
   neon: { label: 'Néon', colors: [[0, 229, 255], [255, 43, 214]] },
   ember: { label: 'Braise', colors: [[196, 42, 18], [255, 176, 64]] },
@@ -1575,6 +1579,7 @@ const FX_THEMES = {
 };
 
 const fxMix = (a, b, t) => a.map((c, i) => Math.round(c + (b[i] - c) * t));
+const fxBase = (name) => FX_THEMES[name]?.base || name;
 const fxHex = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 
 // Décale la teinte d'une couleur (degrés) et la ramène à une saturation et une clarté données.
@@ -1612,7 +1617,7 @@ function fxPalette(themeName, base, brightness) {
   const theme = FX_THEMES[themeName] || FX_THEMES.aurora;
   const white = [255, 255, 255];
   if (theme.colorless) return { color: white, halo: white, accent: white, note: white };
-  if (themeName === 'aurora' || themeName === 'glass') {
+  if (themeName === 'aurora' || fxBase(themeName) === 'glass') {
     // Plus claire quand le son est brillant, plus profonde quand il est sombre.
     const halo = base.map((c) => Math.round(c * (0.7 + 0.3 * brightness) + (255 - c) * 0.35 * brightness));
     // La basse prend une teinte voisine, plus froide : elle se distingue de la pulsation sur le bord.
@@ -1649,6 +1654,7 @@ function applyFx(el, themeName, base, v, now) {
   el.style.setProperty('--fx-lift', (v.lift || 0).toFixed(3));
   el.style.setProperty('--fx-lift-color', (FX_THEMES[themeName]?.colorless ? [255, 255, 255] : fxMix(p.halo, [255, 255, 255], 0.55)).join(' '));
   el.dataset.fxTheme = FX_THEMES[themeName] ? themeName : 'glass';
+  el.dataset.fxBase = fxBase(el.dataset.fxTheme);
   // Verre liquide : le reflet qui fait le tour du bord du verre (angle, éclat, et sa couleur : celle de la
   // pochette tirée vers le blanc)
   el.style.setProperty('--fx-rim-angle', `${(v.rimAngle || 0).toFixed(1)}deg`);
@@ -1663,7 +1669,7 @@ function applyFx(el, themeName, base, v, now) {
   // Halo d'ambiance, relevé par la basse tenue (voir fxDose) ; dans un passage rêveur (voir fxDreamy), il
   // respire lentement (~4 s) et se réchauffe, s'il est là
   // (Verre liquide : il respire aussi pendant un moment fort)
-  const swell = themeName === 'glass' ? 0.15 * (v.peak || 0) : 0;
+  const swell = fxBase(themeName) === 'glass' ? 0.15 * (v.peak || 0) : 0;
   const breath = 1 + (0.2 * dreamy + swell) * Math.sin((2 * Math.PI * now) / 4);
   el.style.setProperty('--fx-glow', Math.min(1, v.glow * breath + (v.glowBeat || 0)).toFixed(3));
   // … et des étincelles discrètes scintillent sur tout le lecteur (animées seulement pendant le passage)
@@ -1728,7 +1734,7 @@ function fxDose(fx, config) {
   // fondu : voir render) au lieu d'un fond clair immobile pendant 30 s
   // (Verre liquide : le fond monte au refrain et y respire lentement, voir applyFx ; seul le reflet du bord
   // bat sur les coups de basse)
-  const glass = config.theme === 'glass';
+  const glass = fxBase(config.theme) === 'glass';
   const glow = config.halo ? fxLevel(Math.max(held, (glass ? 0.6 : 0.35) * peak), config.levels.halo) : 0;
   const glowBeat = config.halo && !glass ? 0.5 * fxLevel(peak * punch, config.levels.halo) : 0;
   const notes = config.notes ? config.levels.notes : 0;
@@ -2018,6 +2024,7 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
   // Mouvements réduits : la pulsation devient un fondu (montée ~60 ms, retombée ~200 ms) plutôt
   // qu'un flash, qui retombe quand même entre deux coups pour que le rythme reste lisible.
   let shownPulse = 0, shownGlow = 1, shownHalo = 0, bassAverage = 0, voiceAverage = 0, shownGrain = 0, shownBeat = 0, rimAngle = 0, press = 0, pressSpeed = 0;
+  let onFrameFx = null;
   function render(dt = FX_STEP) {
     const v = fxDose(fx, config);
     // La sécurité change en douceur (~0,4 s), jamais d'une image à l'autre
@@ -2058,6 +2065,11 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     v.warm = warm;
     v.coverColor = color;
     applyFx(bar, config.theme, fxBaseColor(config, color), v, performance.now() / 1000);
+    // contour hors du lecteur (fenêtre-cadre) : son reflet suit celui du lecteur
+    if (FX_THEMES[config.theme]?.overflow && onFrameFx) {
+      const cs = bar.style;
+      onFrameFx({ rim: cs.getPropertyValue('--fx-rim'), angle: (v.rimAngle || 0).toFixed(1), glint: cs.getPropertyValue('--fx-glint') });
+    }
   }
 
   function start() {
@@ -2134,6 +2146,11 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
       onSource = fn;
       lastSource = null;
       reportSource();
+    },
+
+    // `fn({ rim, angle, glint })` : à chaque image, le reflet d'un contour qui déborde du lecteur.
+    onFrameFx(fn) {
+      onFrameFx = fn;
     },
 
     // Couleur des effets : teinte dominante de la pochette, ou celle par défaut.

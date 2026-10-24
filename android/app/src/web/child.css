@@ -20,7 +20,19 @@ html.android .item:hover {
 html.android-menu,
 html.android-menu body {
   border-radius: 0;
+}
+
+/* le menu peut être plus haut que l'écran (✨ : effet sonore, thèmes, effets, synchronisation…) : la feuille
+   s'arrête au bord de l'écran (mobile.css, .menu-layer) et la page du menu y défile */
+html.android-menu {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+html.android-menu body {
   height: auto;
+  overflow: visible;
 }
 
 html.android-menu #menu {

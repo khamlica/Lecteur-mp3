@@ -85,6 +85,21 @@ object Library {
             .put("files", JSONArray(files.map { JSONObject().put("name", it.name).put("path", it.absolutePath) }))
     }
 
+    // Nouveau dossier `name` dans `parent` (choix du dossier de musique) → { path } ; s'il existe déjà, c'est lui.
+    // Lève une erreur au message lisible si le nom ne convient pas ou si la création échoue.
+    fun makeDir(parent: String, name: String): JSONObject {
+        val clean = name.trim()
+        require(clean.isNotEmpty()) { "Donnez un nom au dossier" }
+        require(clean != "." && clean != ".." && clean.none { it == '/' || it < ' ' }) { "Ce nom ne convient pas à un dossier" }
+        require(clean.toByteArray().size <= 255) { "Ce nom est trop long" }
+        val base = File(parent)
+        require(base.isDirectory && roots().any { base.absolutePath.startsWith(it.second.absolutePath) }) { "Dossier introuvable" }
+        val dir = File(base, clean)
+        if (dir.exists()) require(dir.isDirectory) { "Un fichier porte déjà ce nom" }
+        else if (!dir.mkdir()) throw IllegalStateException("Impossible de créer ce dossier ici")
+        return JSONObject().put("path", dir.absolutePath)
+    }
+
     private inline fun <T> retriever(path: String, block: (MediaMetadataRetriever) -> T): T? = try {
         MediaMetadataRetriever().let { r ->
             try { r.setDataSource(path); block(r) } finally { r.release() }

@@ -50,6 +50,8 @@ function show(items, title = null) {
     root.append(button);
   }
   menu.resize(Math.ceil(root.getBoundingClientRect().height));
+  // un sous-menu s'affiche depuis son début (sur le téléphone, un long menu défile dans sa feuille)
+  document.scrollingElement.scrollTop = 0;
   root.querySelector('.item:not(:disabled)')?.focus({ preventScroll: true });
 }
 

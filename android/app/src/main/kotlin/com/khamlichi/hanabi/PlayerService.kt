@@ -317,6 +317,7 @@ class PlayerService : Service() {
                     when (method) {
                         "scan" -> Library.scan(args.getString(0))
                         "listDir" -> Library.listDir(if (args.isNull(0)) null else args.getString(0))
+                        "mkdir" -> Library.makeDir(args.getString(0), args.getString(1))
                         "metadata" -> Library.metadata(args.getString(0))
                         "youtube" -> Youtube.convert(args.getString(0), if (args.isNull(1)) null else args.getString(1)) { progress ->
                             event("yt-progress", progress.toString())

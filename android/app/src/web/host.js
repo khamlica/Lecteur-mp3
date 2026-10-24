@@ -395,6 +395,7 @@
     $b('browser-list').hidden = !access;
     $b('browser-pick').hidden = !access;
     browser.el.querySelector('.hint').hidden = !access;
+    $b('browser-new').hidden = true;
     if (!access) {
       $b('browser-name').textContent = 'Accès aux fichiers';
       $b('browser-path').textContent = '';
@@ -415,6 +416,7 @@
     $b('browser-up').hidden = !dir.path;
     $b('browser-up').dataset.parent = dir.parent || '';
     $b('browser-pick').hidden = !dir.path;
+    $b('browser-new').hidden = !dir.path; // pas parmi les emplacements (mémoire interne, carte SD)
     browser.el.querySelector('.hint').hidden = !dir.files.length;
     const list = $b('browser-list');
     list.replaceChildren();
@@ -435,6 +437,36 @@
     return button;
   }
 
+  // Nouveau dossier dans celui affiché : une ligne de saisie en haut de la liste ; une fois créé (ou s'il existait
+  // déjà), on y entre, prêt à être choisi (« Lire ce dossier ») ou à recevoir des téléchargements
+  function newFolder() {
+    const list = $b('browser-list');
+    const open = list.querySelector('.new-folder');
+    if (open) return open.querySelector('input').focus();
+    const row = document.createElement('form');
+    row.className = 'new-folder';
+    row.innerHTML = '<svg><use href="#i-folder-add"/></svg>'
+      + '<input type="text" placeholder="Nom du nouveau dossier" enterkeyhint="done" autocomplete="off" spellcheck="false">'
+      + '<button class="action primary" type="submit">Créer</button><div class="error" hidden></div>';
+    const input = row.querySelector('input'), error = row.querySelector('.error');
+    row.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const made = await call('mkdir', browser.path, input.value);
+        showDir(made.path);
+      } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+        input.focus();
+      }
+    });
+    input.addEventListener('input', () => { error.hidden = true; });
+    list.prepend(row);
+    list.scrollTop = 0;
+    input.focus();
+  }
+
+  $b('browser-new').addEventListener('click', newFolder);
   $b('browser-up').addEventListener('click', () => showDir($b('browser-up').dataset.parent || null));
   $b('browser-close').addEventListener('click', () => closeBrowser());
   browser.el.querySelector('.backdrop').addEventListener('click', () => closeBrowser());
@@ -583,6 +615,12 @@
     // Bouton Retour : ferme ce qui est ouvert → true, ou rien à fermer → false (l'app passe en arrière-plan)
     back() {
       if (!browser.el.hidden) {
+        // la saisie d'un nouveau dossier se referme d'abord
+        const naming = $b('browser-list').querySelector('.new-folder');
+        if (naming) {
+          naming.remove();
+          return true;
+        }
         const up = $b('browser-up');
         if (!up.hidden && N.hasStorageAccess()) up.click();
         else closeBrowser();

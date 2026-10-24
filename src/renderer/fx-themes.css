@@ -16,6 +16,8 @@
      --fx-cover-light lumière derrière la pochette, que commande la voix, de 0 à 1
      --fx-pulse-glow (1 à 0,6) : lueurs réduites au-delà de 5 coups/s (photosensibilité)
      --fx-pressure  basse longue et lourde, de 0 à 1 (le contour)
+     --fx-peak      moment fort (refrain), de 0 à 1
+     --fx-punch     coups de basse seuls, de 0 à 1 (sans la basse tenue, contrairement à --fx-rim)
      --fx-glow      halo d'ambiance (fond flou), relevé par la basse tenue, de 0 à 1
      --fx-color     couleur principale (pulsation)
      --fx-halo-color  couleur du halo, selon la brillance du son
@@ -32,6 +34,8 @@
   --fx-cover-light: 0;
   --fx-cover-edge: 76px; /* bord droit de la pochette : le halo des notes graves sort juste à côté */
   --fx-pressure: 0;
+  --fx-peak: 0;
+  --fx-punch: 0;
   --fx-glow: 0;
   --fx-color: 140 160 255;
   --fx-halo-color: 140 160 255;

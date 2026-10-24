@@ -1356,12 +1356,50 @@ const SYNC_HEIGHT = 560;
 let sync = null;
 let syncWindow = null;
 
+// Pare-feu de Windows : le téléphone se connecte au lecteur. Sans règle qui l'autorise (la question de Windows a pu
+// passer inaperçue, ou n'autoriser que les réseaux privés), il ne le trouve pas, par exemple sur le partage de
+// connexion du téléphone. La règle vise le seul programme du lecteur, sur tous les types de réseau.
+const FIREWALL_RULE = 'Hanabi Player (synchronisation)';
+
+function powershell(script) {
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+      { windowsHide: true, timeout: 120000 }, (err, stdout) => (err ? reject(err) : resolve(stdout.trim())));
+  });
+}
+
+const psQuote = (s) => `'${s.replace(/'/g, "''")}'`;
+
+const firewall = {
+  // → true (autorisé), false (bloqué)
+  check: async () => (await powershell(`
+    $rules = Get-NetFirewallApplicationFilter -Program ${psQuote(process.execPath)} -ErrorAction SilentlyContinue | Get-NetFirewallRule |
+      Where-Object { $_.Direction -eq 'Inbound' -and $_.Enabled -eq 'True' }
+    $ours = $rules | Where-Object { $_.DisplayName -eq ${psQuote(FIREWALL_RULE)} -and $_.Action -eq 'Allow' }
+    $block = $rules | Where-Object { $_.Action -eq 'Block' }
+    if ($ours -and -not $block) { 'ok' } else { 'missing' }`)) === 'ok',
+  // Ajoute la règle (et retire celles qui bloquent le lecteur), avec la confirmation de Windows
+  allow: () => {
+    const elevated = `
+      $exe = ${psQuote(process.execPath)}
+      Get-NetFirewallApplicationFilter -Program $exe -ErrorAction SilentlyContinue | Get-NetFirewallRule |
+        Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' } | Remove-NetFirewallRule
+      Remove-NetFirewallRule -DisplayName ${psQuote(FIREWALL_RULE)} -ErrorAction SilentlyContinue
+      New-NetFirewallRule -DisplayName ${psQuote(FIREWALL_RULE)} -Direction Inbound -Program $exe -Action Allow -Profile Any | Out-Null`;
+    const encoded = Buffer.from(elevated, 'utf16le').toString('base64');
+    return powershell(`Start-Process powershell.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-EncodedCommand','${encoded}'`);
+  },
+};
+
 function setupSync() {
   let refresh = null;
   sync = createSync({
     dataDir: app.getPath('userData'),
     folder: downloadFolder,
     scan: scanFolder,
+    firewall,
+    // le morceau ouvert dans le lecteur n'est pas remplacé (Windows refuserait) : il le sera la fois suivante
+    busy: (file) => !!settings.lastTrack && path.resolve(file).toLowerCase() === path.resolve(settings.lastTrack).toLowerCase(),
     onChange: (state) => syncWindow?.webContents.send('sync-update', state),
     // des morceaux sont arrivés du téléphone : la liste du lecteur se met à jour sans couper la lecture
     onLibraryChanged: () => {

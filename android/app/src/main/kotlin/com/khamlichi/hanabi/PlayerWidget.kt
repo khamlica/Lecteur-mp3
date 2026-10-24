@@ -38,16 +38,24 @@ class PlayerWidget : AppWidgetProvider() {
     }
 
     companion object {
-        // Contours qui débordent du lecteur (comme FRAME_SKINS dans main.js) : position et taille de la barre dans
-        // l'image du cadre, en fractions
-        private class Skin(val left: Float, val top: Float, val right: Float, val bottom: Float)
+        // La barre du lecteur de bureau (540 × 88), et les contours des thèmes SAVAGE en pixels du bureau : taille de
+        // l'image du cadre et place de la barre dedans (SAVAGE : le cadre est la barre ; SAVAGE (Meshy) déborde, comme
+        // FRAME_SKINS dans main.js). Le cadre garde ses proportions : seuls ses rails droits s'allongent.
+        private const val BAR_WIDTH = 540f
+        private const val BAR_HEIGHT = 88f
+        private class Skin(val width: Float, val height: Float, val barLeft: Float, val barTop: Float)
         private val SKINS = mapOf(
-            "savage" to Skin(0f, 0f, 0f, 0f),
-            "savage-meshy" to Skin(82f / 703, 35f / 171, (703f - 622) / 703, (171f - 123) / 171),
+            "savage" to Skin(540f, 88f, 0f, 0f),
+            "savage-meshy" to Skin(703f, 171f, 82f, 35f),
         )
 
+        // L'image du cadre et ses rails (colonnes où le cadre n'est qu'un fil droit en haut et en bas : celles qu'on
+        // peut allonger sans rien déformer), lus une fois par thème
+        private class FrameImage(val bitmap: Bitmap, val rails: List<IntRange>)
+
         private val glassCache = mutableMapOf<Int, Pair<String, Bitmap>>()
-        private val frameCache = mutableMapOf<String, Bitmap?>()
+        private val frameCache = mutableMapOf<Int, Pair<String, Bitmap>>()
+        private val frameImages = mutableMapOf<String, FrameImage?>()
 
         fun updateAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
@@ -80,37 +88,88 @@ class PlayerWidget : AppWidgetProvider() {
             val duration = state?.duration ?: 0.0
             views.setProgressBar(R.id.progress, 1000, if (duration > 0) (1000 * position / duration).roundToInt().coerceIn(0, 1000) else 0, false)
 
-            // Taille du widget (portrait : largeur minimale, hauteur maximale), en pixels
+            // Taille du widget, en dp (portrait : largeur minimale, hauteur maximale ; paysage : l'inverse)
             val options = manager.getAppWidgetOptions(id)
             val density = context.resources.displayMetrics.density
-            val w = max(200, options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 300))
-            val h = max(50, options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 72))
-            val scale = minOf(density, 2.5f) // au-delà, l'image pèserait trop lourd pour un widget
+            val landscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val w = max(200, options.getInt(if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 300)).toFloat()
+            val h = max(50, options.getInt(if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 72)).toFloat()
+            val scale = minOf(density, 2.5f) // pixels des images par dp : au-delà, elles pèseraient trop lourd pour un widget
             val width = (w * scale).roundToInt(); val height = (h * scale).roundToInt()
 
             val theme = state?.theme ?: "glass"
             val skin = SKINS[theme]
-            val bar = RectF(0f, 0f, width.toFloat(), height.toFloat())
-            if (skin != null) {
-                bar.set(width * skin.left, height * skin.top, width * (1 - skin.right), height * (1 - skin.bottom))
-                views.setViewPadding(R.id.bar, (bar.left / scale * density + 10 * density).roundToInt(), (bar.top / scale * density).roundToInt(),
-                    ((width - bar.right) / scale * density + 6 * density).roundToInt(), ((height - bar.bottom) / scale * density).roundToInt())
+            val image = skin?.let { frameImages.getOrPut(theme) { frameImage(context, theme, it) } }
+            // Place du cadre et de la barre, en dp : le cadre à la hauteur du widget, ses rails allongés s'il est plus
+            // large ; réduit d'un bloc et centré s'il est plus étroit
+            val bar = RectF(0f, 0f, w, h)
+            val frameRect = RectF(0f, 0f, w, h)
+            if (skin != null && image != null) {
+                var s = h / skin.height
+                if (skin.width * s > w || image.rails.isEmpty()) s = minOf(s, w / skin.width)
+                val frameW = if (skin.width * s < w && image.rails.isNotEmpty()) w else skin.width * s
+                val frameH = skin.height * s
+                frameRect.set((w - frameW) / 2, (h - frameH) / 2, (w + frameW) / 2, (h + frameH) / 2)
+                bar.set(frameRect.left + skin.barLeft * s, frameRect.top + skin.barTop * s,
+                    frameRect.right - (skin.width - skin.barLeft - BAR_WIDTH) * s, frameRect.top + (skin.barTop + BAR_HEIGHT) * s)
             }
+            layoutBar(views, bar, w, h, density)
+
             // le verre et le cadre ne changent qu'avec le morceau, le thème ou la taille : redessinés seulement alors
+            val px = { r: RectF -> RectF(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale) }
             val key = listOf(theme, width, height, state?.coverPath, state?.cover?.generationId, state?.color).joinToString("|")
             val background = glassCache[id]?.takeIf { it.first == key }?.second
-                ?: glass(context, width, height, bar, state, theme, skin != null, scale).also { glassCache[id] = key to it }
+                ?: glass(context, width, height, px(bar), state, theme, skin != null, scale).also { glassCache[id] = key to it }
             views.setImageViewBitmap(R.id.background, background)
-            val frame = skin?.let { frameCache.getOrPut("$theme|$width") { frameBitmap(context, theme, width) } }
-            if (frame != null) {
+            if (image != null) {
+                val frameKey = "$theme|$width|$height"
+                val frame = frameCache[id]?.takeIf { it.first == frameKey }?.second
+                    ?: frameBitmap(image, width, height, px(frameRect)).also { frameCache[id] = frameKey to it }
                 views.setImageViewBitmap(R.id.frame, frame)
                 views.setViewVisibility(R.id.frame, View.VISIBLE)
             } else {
                 views.setViewVisibility(R.id.frame, View.GONE)
             }
-            val cover = state?.cover?.let { rounded(it, (48 * density).roundToInt(), 8 * density) }
+            val coverDp = coverSize(bar.height())
+            val cover = state?.cover?.let { rounded(it, (coverDp * density).roundToInt(), coverDp * 0.13f * density) }
             if (cover != null) views.setImageViewBitmap(R.id.cover, cover) else views.setImageViewResource(R.id.cover, R.mipmap.ic_launcher)
             return views
+        }
+
+        private fun coverSize(barHeight: Float) = (barHeight * 0.74f).coerceIn(32f, 112f)
+
+        // Contenu de la barre à sa taille : marges du cadre, pochette, texte et boutons proportionnés à sa hauteur (comme
+        // la barre du bureau : pochette 64 sur 88, boutons autour de la moitié de la hauteur), avec des minimums pour
+        // rester lisible et touchable. Android 12 et plus seulement : avant, les tailles du layout restent.
+        private fun layoutBar(views: RemoteViews, bar: RectF, w: Float, h: Float, density: Float) {
+            val hb = bar.height()
+            val padStart = (hb * 0.13f).coerceIn(6f, 16f)
+            val padEnd = (hb * 0.08f).coerceIn(4f, 12f)
+            fun px(dp: Float) = (dp * density).roundToInt()
+            views.setViewPadding(R.id.bar, px(bar.left + padStart), px(bar.top), px(w - bar.right + padEnd), px(h - bar.bottom))
+            if (android.os.Build.VERSION.SDK_INT < 31) return
+            val dip = android.util.TypedValue.COMPLEX_UNIT_DIP
+            val cover = coverSize(hb)
+            views.setViewLayoutWidth(R.id.cover, cover, dip)
+            views.setViewLayoutHeight(R.id.cover, cover, dip)
+            views.setViewLayoutMargin(R.id.body, RemoteViews.MARGIN_START, (hb * 0.14f).coerceIn(8f, 16f), dip)
+            val title = (hb * 0.2f).coerceIn(13f, 21f)
+            views.setTextViewTextSize(R.id.title, dip, title)
+            views.setTextViewTextSize(R.id.artist, dip, title * 0.84f)
+            val play = (hb * 0.5f).coerceIn(34f, 60f)
+            val side = play * 0.86f
+            for (button in intArrayOf(R.id.prev, R.id.next)) {
+                views.setViewLayoutWidth(button, side, dip)
+                views.setViewLayoutHeight(button, side, dip)
+                val pad = px(side * 0.24f)
+                views.setViewPadding(button, pad, pad, pad, pad)
+            }
+            views.setViewLayoutWidth(R.id.play, play, dip)
+            views.setViewLayoutHeight(R.id.play, play, dip)
+            val pad = px(play * 0.26f)
+            views.setViewPadding(R.id.play, pad, pad, pad, pad)
+            views.setViewLayoutHeight(R.id.progress, if (hb >= 80) 4f else 3f, dip)
+            views.setViewLayoutMargin(R.id.progress, RemoteViews.MARGIN_TOP, (hb * 0.07f).coerceIn(4f, 10f), dip)
         }
 
         private fun rounded(source: Bitmap, size: Int, radius: Float): Bitmap {
@@ -171,14 +230,70 @@ class PlayerWidget : AppWidgetProvider() {
             return out
         }
 
-        // Le cadre de chrome des thèmes SAVAGE (le même rendu que dans le lecteur, skins/<thème>-frame.png)
-        private fun frameBitmap(context: Context, theme: String, width: Int): Bitmap? = try {
+        // Le cadre de chrome des thèmes SAVAGE (le même rendu que dans le lecteur, skins/<thème>-frame.png), et ses rails :
+        // au-dessus et au-dessous de la barre, dans chaque moitié, la plus longue suite de colonnes où le chrome est le
+        // plus mince (un fil en haut, un en bas ; la marge tient compte du relief du chrome texturé). Les pointes qui
+        // dépassent sur les côtés ne comptent pas.
+        private fun frameImage(context: Context, theme: String, skin: Skin): FrameImage? = try {
             context.assets.open("web/src/renderer/skins/$theme-frame.png").use { input ->
                 val bitmap = BitmapFactory.decodeStream(input) ?: return null
-                if (bitmap.width > width * 1.5) Bitmap.createScaledBitmap(bitmap, width, (bitmap.height * width / bitmap.width.toFloat()).roundToInt(), true) else bitmap
+                val counts = IntArray(bitmap.width)
+                val column = IntArray(bitmap.height)
+                for (x in 0 until bitmap.width) {
+                    bitmap.getPixels(column, 0, 1, x, 0, 1, bitmap.height)
+                    counts[x] = column.count { (it ushr 24) > 40 }
+                }
+                val k = bitmap.width / skin.width
+                val lo = (skin.barLeft * k).roundToInt()
+                val hi = ((skin.barLeft + BAR_WIDTH) * k).roundToInt() - 1
+                val thinnest = (lo..hi).map { counts[it] }.filter { it > 0 }.minOrNull() ?: return FrameImage(bitmap, emptyList())
+                val limit = (thinnest * 1.35f).roundToInt() + 2
+                val plain = { x: Int -> counts[x] in 1..limit }
+                fun longestRun(from: Int, to: Int): IntRange? {
+                    var best: IntRange? = null
+                    var start = -1
+                    for (x in from..to) {
+                        if (plain(x) && start < 0) start = x
+                        if ((!plain(x) || x == to) && start >= 0) {
+                            val end = if (plain(x)) x else x - 1
+                            if (best == null || end - start > best.last - best.first) best = start..end
+                            start = -1
+                        }
+                    }
+                    // trop court : on ne l'allonge pas, le cadre est seulement réduit
+                    return best?.takeIf { it.last - it.first >= bitmap.width / 40 }
+                }
+                val mid = (lo + hi) / 2
+                FrameImage(bitmap, listOfNotNull(longestRun(lo, mid - 1), longestRun(mid, hi)))
             }
         } catch (_: Exception) {
             null
+        }
+
+        // Le cadre posé dans `rect` (pixels du widget) : à l'échelle de sa hauteur, les rails allongés à parts égales pour
+        // atteindre la largeur voulue
+        private fun frameBitmap(image: FrameImage, width: Int, height: Int, rect: RectF): Bitmap {
+            val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(out)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            val src = image.bitmap
+            val s = rect.height() / src.height
+            val extra = (rect.width() - src.width * s).coerceAtLeast(0f) / max(1, image.rails.size)
+            // colonnes du cadre : normales, puis un rail allongé, etc.
+            val cuts = mutableListOf(0)
+            for (r in image.rails) { cuts += r.first; cuts += r.last + 1 }
+            cuts += src.width
+            var x = rect.left
+            for (i in 0 until cuts.size - 1) {
+                val from = cuts[i]; val to = cuts[i + 1]
+                if (to <= from) continue
+                val stretched = i % 2 == 1 && extra > 0f
+                val dw = (to - from) * s + if (stretched) extra else 0f
+                // un demi-pixel de recouvrement : pas de fente entre deux morceaux
+                canvas.drawBitmap(src, Rect(from, 0, to, src.height), RectF(x, rect.top, x + dw + 0.5f, rect.bottom), paint)
+                x += dw
+            }
+            return out
         }
     }
 }

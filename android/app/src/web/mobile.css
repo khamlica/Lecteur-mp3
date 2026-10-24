@@ -63,7 +63,8 @@ body {
 /* ---------- Pochette ---------- */
 
 #cover {
-  width: min(100%, 46vh, 440px);
+  /* un peu moins que la largeur : la lueur de la voix déborde sur les côtés */
+  width: min(82vw, 46vh, 440px);
   height: auto;
   aspect-ratio: 1;
   border-radius: 18px;
@@ -273,9 +274,9 @@ input[type="range"]:active::-webkit-slider-thumb {
   transform: scale(1.25);
 }
 
-/* ---------- En largeur (téléphone couché, tablette) : pochette à gauche ---------- */
+/* ---------- En largeur (téléphone couché, tablette couchée) : pochette à gauche ---------- */
 
-@media (orientation: landscape) and (max-height: 600px) {
+@media (orientation: landscape) and (min-aspect-ratio: 5/4) {
   #bar {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
@@ -300,73 +301,247 @@ input[type="range"]:active::-webkit-slider-thumb {
 
 /* ---------- Effets à l'échelle de l'écran ---------- */
 
-/* Le fond flou : la palette de la pochette (24 × 6 pixels) étirée sur tout l'écran. Floutée par le navigateur à
-   cette taille, elle déborderait de mémoire graphique (deux couches plus grandes que l'écran, à 2,6 × de densité :
-   la page cesse de se dessiner). Ici, une version adoucie une fois pour toutes (--fx-palette-soft, after.js),
-   simplement agrandie ; un seul voile, qui dérive lentement (transformations seulement, sans redessiner). */
-.fx-palette::before {
-  inset: 0;
-  background-image: var(--fx-palette-soft, var(--fx-palette));
-  background-size: 100% 100%;
-  transform: scale(1.35);
-  filter: saturate(1.2) sepia(calc(var(--fx-dreamy) * 0.55)) brightness(var(--fx-palette-dim));
+/* Les effets du bureau sont réglés pour une barre de 540 × 88 : un liseré de 1 px, une lueur de quelques pixels,
+   un fond à peine teinté. Sur l'écran entier, ils disparaissaient. Ici, chaque élément de la musique garde sa
+   zone, à l'échelle de l'écran :
+     le fond               les couleurs de la pochette, toujours là, qui dérivent lentement ; au refrain, il bat
+                           sur les coups de basse ; un passage rêveur l'anime et le réchauffe ;
+     la voix               la pochette s'éclaire par-derrière : une lueur faite de son image floutée (after.js) ;
+     chaque coup           la pochette s'enfonce à peine, sa lueur avec elle ;
+     la basse tenue        (Verre liquide) une lumière de la couleur de la pochette monte du bas de l'écran, une
+                           crête claire en tête, comme un niveau ; (autres thèmes) le contour de l'écran ;
+     un moment fort        le bord de l'écran s'illumine aussi sur les coups de basse, et le reflet qui en fait le
+                           tour s'élance ;
+     un passage aigu       une lumière descend du haut, sous la barre des boutons.
+   Pour rester fluide, chaque calque est dessiné une fois (dégradé fixe, image préparée à l'avance) : la musique ne
+   change que son opacité et sa transformation, que la carte graphique applique sans rien redessiner. Ni flou à
+   l'échelle de l'écran (il déborderait de mémoire graphique, la page cesserait de se dessiner), ni mode de fusion
+   (chacun coûte une surface de la taille de l'écran).
+   Ordre des calques : le fond (-3) ; la lueur et l'aigu (-2) ; le voile de lisibilité, puis la basse, le bord et son
+   reflet (-1). */
+
+/* Le fond : la palette de la pochette (24 × 6 pixels), adoucie, saturée et assombrie une fois pour toutes dans un
+   canevas (after.js, élément .fx-palette-img), simplement agrandie ; elle dérive lentement. Au refrain, elle bat
+   sur les coups de basse. */
+.fx-palette {
+  transform: scale(calc(1 + 0.05 * var(--fx-peak) * var(--fx-punch)));
+  will-change: transform, opacity;
 }
 
-.fx-surface.fx-palette-on .fx-palette::before {
-  background-size: 100% 100%;
-}
-
+.fx-palette::before,
 .fx-palette::after {
   display: none;
 }
 
-.fx-surface.fx-halo-on .fx-palette::before {
-  animation: fx-water-mobile 9s ease-in-out infinite alternate;
+.fx-palette-img {
+  position: absolute;
+  inset: 0;
+  background: center / 100% 100% no-repeat;
+  transform: scale(1.35);
+}
+
+.fx-surface.fx-palette-on .fx-palette-img {
+  animation: fx-water-mobile 16s ease-in-out infinite alternate;
+}
+
+/* passage rêveur : la dérive s'anime, les couleurs se réchauffent (sans battre : un grand fond ne clignote pas) */
+.fx-surface.fx-palette-on.fx-dreamy-on .fx-palette-img {
+  animation-duration: 9s;
+  filter: sepia(calc(var(--fx-dreamy) * 0.45));
 }
 
 @keyframes fx-water-mobile {
   0% { transform: scale(1.35) translate(6%, 4%); }
-  50% { transform: scale(1.45) translate(-3%, -5%) rotate(1.5deg); }
-  100% { transform: scale(1.4) translate(-6%, 3%) rotate(-1deg); }
+  50% { transform: scale(1.5) translate(-4%, -6%) rotate(2deg); }
+  100% { transform: scale(1.42) translate(-7%, 3%) rotate(-1.5deg); }
 }
 
-/* Verre liquide : la palette plus vive, et elle s'illumine sur les attaques dans un passage rêveur */
-.fx-surface[data-fx-base="glass"] .fx-palette::before {
-  filter: saturate(calc(1.5 + 0.3 * var(--fx-dreamy)))
-    brightness(calc(var(--fx-palette-dim) * (1 + 0.6 * var(--fx-dreamy) * var(--fx-grain-beat))));
+/* Verre liquide : le verre est teinté par la pochette, toujours un peu ; la basse tenue et un passage rêveur la
+   relèvent */
+.fx-surface.fx-palette-on[data-fx-base="glass"] .fx-palette {
+  opacity: max(min(0.9, calc(0.7 + 0.2 * var(--fx-glow))), calc(var(--fx-dreamy) * 0.9));
 }
 
-/* passage aigu : seulement le haut de l'écran (une couche de la taille de l'écran de moins) */
-.fx-lift {
-  bottom: auto;
-  height: 160px;
-}
-
-/* le bord du verre suit les coins arrondis de l'écran */
-.fx-surface[data-fx-base="glass"]::after {
-  border-radius: 28px;
-  padding: 1.5px;
-}
-
-/* la voix éclaire la pochette par-derrière, à l'échelle de sa taille */
-.fx-surface[data-fx-base="glass"] .fx-cover {
-  box-shadow:
-    0 calc(10px - var(--fx-press) * 5px) calc(36px - var(--fx-press) * 14px) rgb(0 0 0 / 0.42),
-    0 0 calc(18px + var(--fx-cover-light) * 44px) calc(var(--fx-cover-light) * 4px)
-      rgb(var(--fx-glint) / min(0.45, calc(var(--fx-cover-light) * 0.45)));
-}
-
-/* passage aigu : la lueur descend un peu plus bas que sur une barre */
-.fx-surface[data-fx-base="glass"] .fx-lift {
+/* La surface du verre : un reflet en biais, discret, et un voile sombre en haut et sous le texte et les commandes,
+   par-dessus les lumières, pour qu'ils restent lisibles */
+.fx-surface[data-fx-base="glass"]::before,
+.fx-surface.fx-palette-on[data-fx-base="glass"]::before {
+  z-index: -1;
   background:
-    linear-gradient(90deg, transparent 4%, rgb(var(--fx-glint) / min(0.9, calc(var(--fx-lift) * 0.9))) 50%, transparent 96%)
-      top / 100% 1.5px no-repeat,
-    radial-gradient(60% 100% at 50% 0%, rgb(var(--fx-glint) / min(0.22, calc(var(--fx-lift) * 0.22))), transparent)
-      top / 100% 90px no-repeat;
+    linear-gradient(115deg, rgb(255 255 255 / 0.05), rgb(255 255 255 / 0.01) 30%, transparent 55%,
+      rgb(255 255 255 / 0.015) 85%, rgb(255 255 255 / 0.035)),
+    linear-gradient(180deg, rgb(8 9 14 / 0.34), transparent 15%, transparent 50%, rgb(8 9 14 / 0.42) 74%, rgb(8 9 14 / 0.56));
 }
 
-.fx-bass {
-  --fx-bass-band: 40px;
+/* Le bord du verre, aux coins arrondis de l'écran : un liseré fixe, et le reflet qui en fait le tour, dessiné une
+   fois (un dégradé conique) et tourné par la carte graphique (élément .fx-rim). Il brille sur les
+   coups de basse et avec la basse tenue (--fx-rim). Il remplace le liseré du bureau, redessiné à chaque image. */
+.fx-surface[data-fx-base="glass"]::after {
+  display: none;
+}
+
+.fx-rim {
+  display: none;
+}
+
+.fx-surface[data-fx-base="glass"] .fx-rim {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 28px;
+  padding: 2.5px;
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.28), rgb(255 255 255 / 0.06) 35%,
+    rgb(255 255 255 / 0.03) 65%, rgb(255 255 255 / 0.13));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+}
+
+.fx-rim i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* assez grand pour couvrir les coins une fois tourné (au moins √2 × le grand côté) */
+  width: 150vmax;
+  height: 150vmax;
+  margin: -75vmax 0 0 -75vmax;
+  background: conic-gradient(rgb(var(--fx-glint)) 0deg, rgb(var(--fx-glint) / 0.25) 35deg, transparent 90deg,
+    transparent 270deg, rgb(var(--fx-glint) / 0.25) 325deg, rgb(var(--fx-glint)) 360deg);
+  transform: rotate(var(--fx-rim-angle));
+  opacity: calc(0.2 + 0.8 * var(--fx-rim));
+  will-change: transform, opacity;
+}
+
+/* Un moment fort : le bord de l'écran s'illumine vers l'intérieur sur les coups de basse, de la couleur de la
+   pochette tirée vers le blanc (l'élément des étincelles, sans usage en Verre liquide). Seulement au refrain, et
+   réduit au-delà de 5 coups par seconde (--fx-pulse-glow), comme toute lueur. */
+.fx-surface[data-fx-base="glass"] .fx-sparkles {
+  display: block;
+  border-radius: 28px;
+  box-shadow: inset 0 0 40px 2px rgb(var(--fx-glint) / 0.5), inset 0 0 10px 1px rgb(var(--fx-glint) / 0.45);
+  opacity: min(0.7, calc(var(--fx-peak) * var(--fx-punch) * var(--fx-pulse-glow) * 0.7));
+  will-change: opacity;
+}
+
+.fx-surface[data-fx-base="glass"] .fx-sparkles::before,
+.fx-surface[data-fx-base="glass"] .fx-sparkles::after {
+  display: none;
+}
+
+/* Basse tenue (Verre liquide) : une lumière monte du bas de l'écran, d'autant plus haut que la basse est lourde,
+   avec une crête claire en tête (on lit un niveau qui monte) ; dessinée une fois, seules sa position et son opacité
+   suivent la basse */
+.fx-surface[data-fx-base="glass"] .fx-bass {
+  /* au-dessus du voile de lisibilité (qui l'éteindrait là où elle monte) : assez discrète pour le texte */
+  z-index: -1;
+  top: auto;
+  height: 60%;
+  box-shadow: none;
+  mix-blend-mode: normal;
+  background:
+    linear-gradient(90deg, transparent 6%, rgb(var(--fx-glint) / 0.6) 50%, transparent 94%) top / 100% 2px no-repeat,
+    radial-gradient(55% 100% at 50% 0%, rgb(var(--fx-glint) / 0.22), transparent) top / 100% 70px no-repeat,
+    /* une lumière : de la couleur de la pochette éclaircie, qui apparaît en fondu sous la crête (pas de bord) */
+    linear-gradient(180deg, transparent, rgb(var(--fx-glint) / 0.06) 90px, rgb(var(--fx-glint) / 0.12));
+  transform: translateY(calc((1 - var(--fx-pressure)) * 85%));
+  /* une pochette presque grise donnerait une lumière blanche qui délave tout : plus discrète */
+  opacity: min(1, calc(var(--fx-pressure) * 1.3 * var(--fx-cover-vivid)));
+  will-change: transform, opacity;
+}
+
+/* Passage aigu : une lumière claire descend du haut, sous la barre des boutons (un liseré et sa lueur) */
+.fx-surface[data-fx-base="glass"] .fx-lift {
+  z-index: -2;
+  top: 9%;
+  bottom: auto;
+  height: 30%;
+  mix-blend-mode: normal;
+  background:
+    linear-gradient(90deg, transparent 8%, rgb(var(--fx-glint) / 0.8) 50%, transparent 92%) top / 100% 2px no-repeat,
+    radial-gradient(65% 100% at 50% 0%, rgb(var(--fx-glint) / 0.32), rgb(var(--fx-glint) / 0.08) 50%, transparent 78%);
+  opacity: min(1, var(--fx-lift));
+  will-change: opacity;
+}
+
+/* La voix : la pochette s'éclaire par-derrière, une lueur faite de sa propre image floutée et éclaircie, qui
+   déborde de ses bords (élément .fx-cover-glow, posé et rempli par after.js) ; presque éteinte sans voix, pour
+   que la voix se voie. Elle suit les mouvements de la pochette. */
+.fx-cover-glow {
+  position: absolute;
+  z-index: -2;
+  pointer-events: none;
+  background: center / 100% 100% no-repeat;
+  opacity: 0;
+  transform: scale(calc(1.04 + 0.12 * var(--fx-cover-light) - 0.035 * var(--fx-press)));
+  will-change: transform, opacity;
+}
+
+.fx-surface.fx-cover-glow-on .fx-cover-glow {
+  opacity: min(0.95, calc(0.1 + 0.85 * var(--fx-cover-light)));
+}
+
+/* (autres thèmes : la pochette grossit sur les coups au lieu de s'enfoncer) */
+.fx-surface:not([data-fx-base="glass"]) .fx-cover-glow {
+  transform: scale(calc(1.04 + 0.12 * var(--fx-cover-light) + 0.06 * var(--fx-pulse)));
+}
+
+.fx-surface[data-fx-theme="mono"] .fx-cover-glow {
+  display: none;
+}
+
+/* Chaque coup : la pochette s'enfonce à peine dans le verre et revient avec un rebond amorti (--fx-press) ; son
+   ombre est fixe (la redessiner à chaque image coûterait cher à cette taille), la lueur fait la lumière */
+.fx-surface[data-fx-base="glass"] .fx-cover {
+  transform: scale(calc(1 - var(--fx-press) * 0.035));
+  box-shadow: 0 14px 40px rgb(0 0 0 / 0.45);
+}
+
+/* Les autres thèmes : les mêmes calques que sur le bureau, mais dessinés une fois, leur opacité seule suivant la
+   musique (sur le bureau, leur dégradé ou leur ombre est recalculé à chaque image : à l'échelle de l'écran, trop
+   cher). Le halo d'ambiance, la basse tenue tout autour de l'écran, le passage aigu en haut. */
+.fx-surface:not([data-fx-base="glass"])::before {
+  opacity: var(--fx-glow);
+  will-change: opacity;
+}
+
+.fx-surface[data-fx-theme="aurora"]::before {
+  background: rgb(var(--fx-halo-color) / 0.28);
+}
+
+.fx-surface[data-fx-theme="neon"]::before {
+  background: radial-gradient(farthest-corner at 50% 50%, transparent 35%, rgb(var(--fx-halo-color) / 0.42));
+}
+
+.fx-surface[data-fx-theme="ember"]::before {
+  background:
+    radial-gradient(120% 180% at 50% 50%, transparent 35%, rgb(var(--fx-halo-color) / 0.55)),
+    linear-gradient(90deg, rgb(var(--fx-halo-color) / 0.38), rgb(var(--fx-halo-color) / 0.16) 50%, rgb(var(--fx-halo-color) / 0.28));
+}
+
+.fx-surface[data-fx-theme="mono"]::before {
+  background: radial-gradient(120% 180% at 50% 50%, rgb(255 255 255 / 0.03), rgb(255 255 255 / 0.2));
+}
+
+.fx-surface:not([data-fx-base="glass"]) .fx-bass {
+  border-radius: 28px;
+  mix-blend-mode: normal;
+  box-shadow:
+    inset 0 0 0 2.5px rgb(var(--fx-bass-color) / 0.55),
+    inset 0 0 90px rgb(var(--fx-bass-color) / 0.6);
+  opacity: calc(var(--fx-pressure) * var(--fx-bass-alpha) * var(--fx-bass-flicker));
+  will-change: opacity;
+}
+
+.fx-surface:not([data-fx-base="glass"]) .fx-lift {
+  top: 9%;
+  bottom: auto;
+  height: 30%;
+  box-shadow: none;
+  background: linear-gradient(180deg, rgb(var(--fx-lift-color) / 0.5), transparent);
+  opacity: min(1, var(--fx-lift));
+  will-change: opacity;
 }
 
 /* SAVAGE : le cadre de chrome est dessiné pour la barre du bureau (540 × 88) ; étiré sur l'écran entier il
@@ -375,8 +550,24 @@ input[type="range"]:active::-webkit-slider-thumb {
   display: none;
 }
 
-.fx-surface:is([data-fx-theme="savage"], [data-fx-theme="savage-meshy"]):not(.preview)::after {
-  display: block;
+/* Mouvements réduits (réglage d'Android) : rien ne bouge ni ne bat, le bord ne s'illumine qu'à peine ; les
+   lumières suivent toujours la musique */
+@media (prefers-reduced-motion: reduce) {
+  .fx-palette,
+  .fx-surface[data-fx-base="glass"] .fx-bass,
+  .fx-cover-glow,
+  .fx-surface:not([data-fx-base="glass"]) .fx-cover-glow,
+  .fx-surface[data-fx-base="glass"] .fx-cover {
+    transform: none;
+  }
+
+  .fx-surface.fx-palette-on .fx-palette-img {
+    animation: none;
+  }
+
+  .fx-surface[data-fx-base="glass"] .fx-sparkles {
+    opacity: min(0.3, calc(var(--fx-peak) * var(--fx-punch) * 0.3));
+  }
 }
 
 /* ---------- Panneaux : menus, réglages, choix du dossier (host.js) ---------- */

@@ -35,7 +35,7 @@ object Youtube {
         initialized = true
     }
 
-    private class Job { val id = UUID.randomUUID().toString(); @Volatile var cancelled = false }
+    internal class Job { val id = UUID.randomUUID().toString(); @Volatile var cancelled = false }
     @Volatile private var job: Job? = null
 
     fun cancel() {
@@ -58,7 +58,9 @@ object Youtube {
         return dir.absolutePath
     }
 
-    // yt-dlp évolue sans cesse avec YouTube : mis à jour une fois par jour au plus, avant un téléchargement
+    // yt-dlp évolue sans cesse avec YouTube : mis à jour une fois par jour au plus, avant un téléchargement (une seule
+    // mise à jour à la fois : les téléchargements d'un QR code tournent en parallèle)
+    @Synchronized
     private fun updateYtDlp(force: Boolean, progress: (JSONObject) -> Unit) {
         val last = prefs.getLong("updated", 0)
         if (!force && System.currentTimeMillis() - last < 24 * 3600 * 1000L) return
@@ -71,6 +73,82 @@ object Youtube {
         }
     }
 
+    // Prépare yt-dlp (décompressé au premier usage, mis à jour une fois par jour)
+    fun prepare(progress: (JSONObject) -> Unit) {
+        if (!File(HanabiApp.app.noBackupFilesDir, "youtubedl-android/packages/python").exists()) {
+            progress(JSONObject().put("status", "Installation de yt-dlp…"))
+        }
+        ensureInit()
+        updateYtDlp(false, progress)
+    }
+
+    // Télécharge l'audio de `url` dans `folder` → les fichiers obtenus ({ id, filepath, title, track, artist, channel,
+    // thumbnail }), ou une erreur. Un échec est réessayé une fois après mise à jour de yt-dlp (souvent dû à un
+    // changement côté YouTube).
+    private class Downloaded(val files: List<JSONObject>, val error: String?)
+
+    private fun download(url: String, folder: String, temp: File, current: Job, progress: (JSONObject) -> Unit): Downloaded {
+        val files = mutableListOf<JSONObject>()
+        fun request() = YoutubeDLRequest(url).apply {
+            addOption("--no-playlist")
+            // Meilleure piste audio disponible, gardée telle quelle (Opus le plus souvent, sinon AAC) : aucun
+            // réencodage, donc aucune perte, et environ deux fois plus léger qu'un MP3 équivalent.
+            addOption("-f", "bestaudio/best")
+            addOption("-x")
+            addOption("--embed-metadata"); addOption("--embed-thumbnail"); addOption("--convert-thumbnails", "jpg")
+            // les mêmes noms de fichiers que sur l'ordinateur (et lisibles sur une carte SD)
+            addOption("--windows-filenames")
+            addOption("-P", folder); addOption("-P", "temp:${temp.absolutePath}")
+            addOption("-o", "%(title)s.%(ext)s")
+            // (les avertissements restent : ils vont au journal d'Android, voir run)
+            addOption("--quiet"); addOption("--progress"); addOption("--newline")
+            addOption("--progress-template", "download:P %(progress._percent_str)s")
+            addOption("--print", "before_dl:T %(title)s")
+            // Infos du fichier obtenu, pour le nettoyer et retrouver le morceau (track et artist ne sont connus
+            // que si YouTube a identifié la musique)
+            addOption("--print", "after_move:F %(.{id,filepath,title,track,artist,channel,thumbnail})j")
+        }
+        val onLine = { line: String ->
+            val value = line.drop(2).trim()
+            when {
+                line.startsWith("T ") -> progress(JSONObject().put("title", value).put("status", "Téléchargement…"))
+                line.startsWith("P ") -> value.removeSuffix("%").trim().toDoubleOrNull()?.let { pct ->
+                    progress(JSONObject().put("status", if (pct >= 100) "Finalisation…" else "Téléchargement… ${pct.toInt()} %"))
+                }
+                line.startsWith("F ") -> try {
+                    files += JSONObject(value)
+                } catch (_: Exception) {
+                    // ligne illisible : le fichier est quand même dans le dossier, seulement pas nettoyé
+                }
+            }
+            Unit
+        }
+        fun run(): String? = try {
+            val res = YoutubeDL.getInstance().execute(request(), current.id) { _, _, line -> onLine(line) }
+            if (res.err.isNotBlank()) Log.w(TAG, "yt-dlp : ${res.err.take(4000)}")
+            null
+        } catch (e: YoutubeDL.CanceledException) {
+            "cancelled"
+        } catch (e: YoutubeDLException) {
+            e.message ?: ""
+        }
+
+        var errors = run()
+        if (errors != null && !current.cancelled) {
+            updateYtDlp(true, progress)
+            if (!current.cancelled) { files.clear(); errors = run() }
+        }
+        return Downloaded(files, if (errors != null || files.isEmpty()) "Échec : ${errorMessage(errors ?: "")}" else null)
+    }
+
+    // Intro et outro hors musique, puis silences du début et de la fin
+    private fun clean(files: List<JSONObject>) {
+        for (file in files) {
+            trimNonMusic(file.getString("filepath"), file.optString("id"))
+            Media.trimSilence(file.getString("filepath"))
+        }
+    }
+
     // → { folder, tracks, file } | { error } | { cancelled: true }
     fun convert(url: String, folderSetting: String?, progress: (JSONObject) -> Unit): JSONObject {
         if (job != null) return JSONObject().put("error", "Une conversion est déjà en cours")
@@ -78,72 +156,15 @@ object Youtube {
         job = current
         val temp = File(HanabiApp.app.cacheDir, "hanabi-player-youtube")
         try {
-            if (!File(HanabiApp.app.noBackupFilesDir, "youtubedl-android/packages/python").exists()) {
-                progress(JSONObject().put("status", "Installation de yt-dlp…")) // décompressé au premier usage
-            }
-            ensureInit()
-            updateYtDlp(false, progress)
+            prepare(progress)
             if (current.cancelled) return JSONObject().put("cancelled", true)
             val folder = downloadFolder(folderSetting)
-            val files = mutableListOf<JSONObject>()
-            fun request() = YoutubeDLRequest(url).apply {
-                addOption("--no-playlist")
-                // Meilleure piste audio disponible, gardée telle quelle (Opus le plus souvent, sinon AAC) : aucun
-                // réencodage, donc aucune perte, et environ deux fois plus léger qu'un MP3 équivalent.
-                addOption("-f", "bestaudio/best")
-                addOption("-x")
-                addOption("--embed-metadata"); addOption("--embed-thumbnail"); addOption("--convert-thumbnails", "jpg")
-                // les mêmes noms de fichiers que sur l'ordinateur (et lisibles sur une carte SD)
-                addOption("--windows-filenames")
-                addOption("-P", folder); addOption("-P", "temp:${temp.absolutePath}")
-                addOption("-o", "%(title)s.%(ext)s")
-                // (les avertissements restent : ils vont au journal d'Android, voir run)
-                addOption("--quiet"); addOption("--progress"); addOption("--newline")
-                addOption("--progress-template", "download:P %(progress._percent_str)s")
-                addOption("--print", "before_dl:T %(title)s")
-                // Infos du fichier obtenu, pour le nettoyer et retrouver le morceau (track et artist ne sont connus
-                // que si YouTube a identifié la musique)
-                addOption("--print", "after_move:F %(.{id,filepath,title,track,artist,channel,thumbnail})j")
-            }
-            val onLine = { line: String ->
-                val value = line.drop(2).trim()
-                when {
-                    line.startsWith("T ") -> progress(JSONObject().put("title", value).put("status", "Téléchargement…"))
-                    line.startsWith("P ") -> value.removeSuffix("%").trim().toDoubleOrNull()?.let { pct ->
-                        progress(JSONObject().put("status", if (pct >= 100) "Finalisation…" else "Téléchargement… ${pct.toInt()} %"))
-                    }
-                    line.startsWith("F ") -> try {
-                        files += JSONObject(value)
-                    } catch (_: Exception) {
-                        // ligne illisible : le fichier est quand même dans le dossier, seulement pas nettoyé
-                    }
-                }
-                Unit
-            }
-            fun run(): String? = try {
-                val res = YoutubeDL.getInstance().execute(request(), current.id) { _, _, line -> onLine(line) }
-                if (res.err.isNotBlank()) Log.w(TAG, "yt-dlp : ${res.err.take(4000)}")
-                null
-            } catch (e: YoutubeDL.CanceledException) {
-                "cancelled"
-            } catch (e: YoutubeDLException) {
-                e.message ?: ""
-            }
-
-            var errors = run()
-            if (errors != null && !current.cancelled) {
-                // Souvent dû à un changement côté YouTube : on met yt-dlp à jour et on réessaie une fois.
-                updateYtDlp(true, progress)
-                if (!current.cancelled) { files.clear(); errors = run() }
-            }
+            val (files, error) = download(url, folder, temp, current, progress).let { it.files to it.error }
             if (current.cancelled) return JSONObject().put("cancelled", true)
-            if (errors != null || files.isEmpty()) return JSONObject().put("error", "Échec : ${errorMessage(errors ?: "")}")
+            if (error != null) return JSONObject().put("error", error)
 
             progress(JSONObject().put("status", "Nettoyage du début et de la fin…"))
-            for (file in files) {
-                trimNonMusic(file.getString("filepath"), file.optString("id"))
-                Media.trimSilence(file.getString("filepath"))
-            }
+            clean(files)
             progress(JSONObject().put("status", "Recherche du titre et de la pochette…"))
             for (file in files) tagDownload(file)
             MediaScannerConnection.scanFile(HanabiApp.app, files.map { it.getString("filepath") }.toTypedArray(), null, null)
@@ -161,6 +182,37 @@ object Youtube {
             return JSONObject().put("error", "Échec : ${e.message}")
         } finally {
             job = null
+            temp.deleteRecursively()
+        }
+    }
+
+    // Un morceau de la liste d'un QR code (synchronisation sans Wi‑Fi, Sync.kt) : le titre et l'artiste viennent de
+    // l'ordinateur, donc pas de recherche en ligne, et plusieurs téléchargements peuvent tourner à la fois (prepare
+    // d'abord). La pochette est la miniature de la vidéo ; la prochaine synchronisation par le réseau remplace le
+    // fichier par celui de l'ordinateur. → le chemin du fichier, ou null (annulé ou introuvable)
+    class Fetch { internal val job = Job(); val cancelled get() = job.cancelled }
+
+    fun cancel(fetch: Fetch) {
+        fetch.job.cancelled = true
+        YoutubeDL.getInstance().destroyProcessById(fetch.job.id)
+    }
+
+    fun fetch(fetch: Fetch, videoId: String, title: String?, artist: String?, folder: String): String? {
+        val temp = File(HanabiApp.app.cacheDir, "hanabi-player-youtube-$videoId")
+        try {
+            val (files, error) = download("https://www.youtube.com/watch?v=$videoId", folder, temp, fetch.job) {}.let { it.files to it.error }
+            if (fetch.cancelled || error != null) {
+                if (error != null) Log.w(TAG, "$videoId : $error")
+                return null
+            }
+            clean(files)
+            for (file in files) {
+                val path = file.getString("filepath")
+                Media.writeTags(path, title?.ifBlank { null }, artist?.ifBlank { null }, squareThumbnail(path))
+            }
+            MediaScannerConnection.scanFile(HanabiApp.app, files.map { it.getString("filepath") }.toTypedArray(), null, null)
+            return files.firstOrNull()?.getString("filepath")
+        } finally {
             temp.deleteRecursively()
         }
     }

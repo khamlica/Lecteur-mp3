@@ -563,6 +563,7 @@ class PlayerService : Service() {
 
     private fun setupSync() {
         Sync.folderSetting = { folderSetting }
+        Sync.playingPath = { state.path }
         Sync.onState = { event("sync-state", it.toString()) }
         // morceaux reçus : la liste du lecteur suit (et le dossier, s'il vient d'être créé)
         Sync.onLibraryChanged = { folder ->

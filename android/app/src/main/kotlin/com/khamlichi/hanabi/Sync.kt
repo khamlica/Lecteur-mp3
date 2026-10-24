@@ -20,8 +20,13 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
+import java.nio.ByteBuffer
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.Inflater
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
@@ -64,15 +69,19 @@ object Sync {
 
     // Sans réseau commun : la liste scannée sur l'ordinateur (QR code, voir qrCodes dans src/sync.js), et les vidéos
     // qui manquent ici, retéléchargées depuis YouTube
+    private class QrTrack(val id: String, val title: String, val artist: String)
     private class Offline {
         var step = "confirm"     // confirm | downloading | done | failed
-        var ids = listOf<String>()
-        var message: String? = null
+        var tracks = listOf<QrTrack>()
+        @Volatile var message: String? = null
         @Volatile var cancelled = false
+        val fetches: MutableSet<Youtube.Fetch> = ConcurrentHashMap.newKeySet()
     }
     private var offline: Offline? = null
     // ouvre le scanner de QR code (PlayerService) → le texte lu, ou null (annulé : sans erreur)
     var scanner: (((String?, String?) -> Unit) -> Unit)? = null
+    // le morceau en cours d'écoute (PlayerService) : pas remplacé pendant qu'on l'écoute
+    var playingPath: () -> String? = { null }
     private val running = AtomicBoolean(false)
 
     // La page et Android sont prévenus de chaque changement (PlayerService) : état → page, dossier → liste du lecteur
@@ -113,7 +122,7 @@ object Sync {
                 .put("code", p.code ?: JSONObject.NULL).put("accepted", p.accepted).put("message", p.message ?: JSONObject.NULL))
             .put("activity", activity ?: JSONObject.NULL)
             .put("offline", offline?.let { o ->
-                JSONObject().put("step", o.step).put("count", o.ids.size).put("message", o.message ?: JSONObject.NULL)
+                JSONObject().put("step", o.step).put("count", o.tracks.size).put("message", o.message ?: JSONObject.NULL)
             } ?: JSONObject.NULL)
     }
 
@@ -148,13 +157,26 @@ object Sync {
         Settings.Global.getString(HanabiApp.app.contentResolver, "device_name")?.takeIf { it.isNotBlank() } ?: Build.MODEL
 
     // Les ordinateurs qui répondent sur le réseau : diffusion sur chaque réseau du téléphone (Wi‑Fi, partage de
-    // connexion…) ; l'émulateur, lui, ne joint que l'ordinateur qui le fait tourner (10.0.2.2)
+    // connexion…) ; l'émulateur, lui, ne joint que l'ordinateur qui le fait tourner (10.0.2.2). Si personne ne répond
+    // à la diffusion (Android ne l'envoie pas toujours sur le réseau du partage de connexion), chaque adresse des
+    // petits réseaux du téléphone est interrogée une à une.
     private fun discover(): List<JSONObject> {
         val targets = mutableSetOf<InetAddress>(InetAddress.getByName("255.255.255.255"))
+        val sweep = mutableSetOf<InetAddress>()
         try {
             for (iface in NetworkInterface.getNetworkInterfaces()) {
                 if (!iface.isUp || iface.isLoopback) continue
-                iface.interfaceAddresses.mapNotNullTo(targets) { a -> a.broadcast?.takeIf { a.address is Inet4Address } }
+                for (a in iface.interfaceAddresses) {
+                    val own = a.address as? Inet4Address ?: continue
+                    a.broadcast?.let { targets += it }
+                    val prefix = a.networkPrefixLength.toInt()
+                    if (prefix !in 24..30) continue
+                    val ip = ByteBuffer.wrap(own.address).int
+                    val net = ip and (-1 shl (32 - prefix))
+                    for (host in 1 until (1 shl (32 - prefix)) - 1) {
+                        if (net or host != ip) sweep += InetAddress.getByAddress(ByteBuffer.allocate(4).putInt(net or host).array())
+                    }
+                }
             }
         } catch (_: Exception) {}
         if (debug) targets += InetAddress.getByName("10.0.2.2")
@@ -164,8 +186,8 @@ object Sync {
             socket.soTimeout = 300
             val message = "HANABI-DISCOVER 1".toByteArray()
             val buffer = ByteArray(2048)
-            repeat(3) {
-                for (target in targets) {
+            repeat(3) { round ->
+                for (target in if (round > 0 && found.isEmpty()) targets + sweep else targets) {
                     try { socket.send(DatagramPacket(message, message.size, target, DISCOVERY_PORT)) } catch (_: IOException) {}
                 }
                 val until = System.currentTimeMillis() + 500
@@ -355,10 +377,30 @@ object Sync {
 
     // ---------- Sans Wi‑Fi : QR code de la liste ----------
 
-    private val qrFormat = Regex("^HANABI1\\|(\\d+)/(\\d+)\\|((?:[\\w-]{11})*)$")
+    // « HANABI2|page/pages|données » (voir qrCodes dans src/sync.js) ; « HANABI1|…|ids » : versions 1.4.0
+    private val qrFormat = Regex("^HANABI([12])\\|(\\d+)/(\\d+)\\|([\\w-]*)$")
 
     private fun scanQr() {
         scanner?.invoke(::scanned)
+    }
+
+    // Les morceaux d'un QR code : identifiant de la vidéo, titre et artiste sur l'ordinateur
+    private fun qrTracks(version: String, data: String): List<QrTrack> {
+        if (version == "1") return data.chunked(11).map { QrTrack(it, "", "") }
+        val inflater = Inflater(true)
+        inflater.setInput(android.util.Base64.decode(data, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP))
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (!inflater.finished()) {
+            val n = inflater.inflate(buffer)
+            if (n == 0 && (inflater.needsInput() || inflater.needsDictionary())) break
+            out.write(buffer, 0, n)
+        }
+        inflater.end()
+        return out.toString("UTF-8").split('\n').mapNotNull { line ->
+            val f = line.split('\t')
+            if (!Regex("[\\w-]{11}").matches(f[0])) null else QrTrack(f[0], f.getOrElse(1) { "" }, f.getOrElse(2) { "" })
+        }
     }
 
     private fun scanned(text: String?, error: String?) {
@@ -366,7 +408,8 @@ object Sync {
         HanabiApp.work.execute {
             val o = Offline()
             val m = text?.let { qrFormat.find(it.trim()) }
-            if (m == null) {
+            val tracks = try { m?.let { qrTracks(it.groupValues[1], it.groupValues[4]) } } catch (e: Exception) { null }
+            if (m == null || tracks == null) {
                 o.step = "failed"
                 o.message = if (text == null) "Scan impossible : $error" else "Ce n'est pas un QR code de Hanabi Player"
             } else {
@@ -375,8 +418,8 @@ object Sync {
                 val here = Library.scan(folder).let { a -> (0 until a.length()).map { Library.trackId(File(a.getJSONObject(it).getString("path"))) } }
                 remember(folder, here)
                 val known = known(folder)
-                o.ids = m.groupValues[3].chunked(11).filter { "yt:$it" !in known }.distinct()
-                val (page, pages) = m.groupValues[1] to m.groupValues[2]
+                o.tracks = tracks.filter { "yt:${it.id}" !in known }.distinctBy { it.id }
+                val (page, pages) = m.groupValues[2] to m.groupValues[3]
                 if (pages != "1") o.message = "Code $page sur $pages : scannez aussi les autres ensuite."
             }
             synchronized(this) { offline = o }
@@ -384,40 +427,61 @@ object Sync {
         }
     }
 
+    // Plusieurs morceaux à la fois : le plus long est d'attendre YouTube et le nettoyage, pas le réseau
+    private const val QR_PARALLEL = 3
+
     private fun downloadQr() {
-        val o = synchronized(this) { offline?.takeIf { it.step == "confirm" && it.ids.isNotEmpty() } } ?: return
+        val o = synchronized(this) { offline?.takeIf { it.step == "confirm" && it.tracks.isNotEmpty() } } ?: return
         o.step = "downloading"
         HanabiApp.work.execute {
-            var done = 0
-            var failed = 0
-            var folder: String? = null
-            for ((i, id) in o.ids.withIndex()) {
-                if (o.cancelled) break
-                val step = "Téléchargement ${i + 1}/${o.ids.size}"
-                o.message = step
+            val folder = Youtube.downloadFolder(folderSetting())
+            val total = o.tracks.size
+            val queue = ConcurrentLinkedQueue(o.tracks)
+            val done = AtomicInteger()
+            val failed = AtomicInteger()
+            fun report(title: String?) {
+                o.message = "Téléchargement ${done.get() + failed.get()}/$total" + (title?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
                 changed()
-                val result = Youtube.convert("https://www.youtube.com/watch?v=$id", folderSetting()) { progress ->
-                    o.message = listOf(step, progress.optString("title"), progress.optString("status")).filter { it.isNotBlank() }.joinToString(" · ")
-                    changed()
-                }
-                when {
-                    result.optBoolean("cancelled") -> break
-                    result.has("error") -> failed++
-                    else -> {
-                        done++
-                        folder = result.optString("folder").ifEmpty { null }
-                        folder?.let { remember(it, listOf("yt:$id")) }
+            }
+            try {
+                Youtube.prepare { p -> o.message = p.optString("status"); changed() }
+                report(null)
+                val workers = (1..minOf(QR_PARALLEL, total)).map {
+                    HanabiApp.work.submit {
+                        while (!o.cancelled) {
+                            val t = queue.poll() ?: break
+                            val fetch = Youtube.Fetch()
+                            o.fetches += fetch
+                            report(t.title.ifBlank { null })
+                            val path = try {
+                                Youtube.fetch(fetch, t.id, t.title, t.artist, folder)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "${t.id} non téléchargé", e)
+                                null
+                            }
+                            o.fetches -= fetch
+                            if (path != null) {
+                                remember(folder, listOf("yt:${t.id}"))
+                                done.incrementAndGet()
+                            } else if (!o.cancelled) failed.incrementAndGet()
+                            report(null)
+                        }
                     }
                 }
+                workers.forEach { it.get() }
+            } catch (e: Exception) {
+                Log.w(TAG, "Téléchargement de la liste impossible", e)
             }
+            val n = done.get()
+            val f = failed.get()
             o.step = "done"
             o.message = listOfNotNull(
-                "${if (done > 1) "$done morceaux téléchargés" else "$done morceau téléchargé"}",
-                if (failed > 0) "$failed indisponible${if (failed > 1) "s" else ""} sur YouTube" else null,
+                if (n > 1) "$n morceaux téléchargés" else "$n morceau téléchargé",
+                if (f > 0) "$f indisponible${if (f > 1) "s" else ""} sur YouTube" else null,
                 if (o.cancelled) "arrêté" else null,
             ).joinToString(", ")
             changed()
-            folder?.let { onLibraryChanged?.invoke(it) }
+            if (n > 0) onLibraryChanged?.invoke(folder)
         }
     }
 
@@ -425,7 +489,7 @@ object Sync {
         val o = synchronized(this) { offline } ?: return
         if (o.step == "downloading") {
             o.cancelled = true
-            Youtube.cancel()
+            o.fetches.forEach { Youtube.cancel(it) }
         } else synchronized(this) { offline = null }
     }
 
@@ -443,6 +507,24 @@ object Sync {
             store.getJSONObject("known").put(folder.lowercase(), JSONArray(set.toList()))
             save()
         }
+    }
+
+    // Empreinte du contenu (comme fileHash dans src/sync.js) : un titre, un artiste ou une pochette modifiés la changent
+    private class Hashed(val size: Long, val modified: Long, val hash: String)
+    private val hashes = ConcurrentHashMap<String, Hashed>()
+
+    private fun fileHash(file: File): String {
+        hashes[file.path]?.let { if (it.size == file.length() && it.modified == file.lastModified()) return it.hash }
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(1 shl 16)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                digest.update(buffer, 0, n)
+            }
+        }
+        return hex(digest.digest()).also { hashes[file.path] = Hashed(file.length(), file.lastModified(), it) }
     }
 
     private fun progress(step: String?) = synchronized(this) { activity?.put("step", step ?: JSONObject.NULL) }.also { changed() }
@@ -510,15 +592,35 @@ object Sync {
         val known = known(folder.absolutePath)
         val remoteKnown = library.getJSONArray("known").let { a -> (0 until a.length()).mapTo(mutableSetOf()) { a.getString(it) } }
         val remote = library.getJSONArray("tracks").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
+        val remoteById = remote.associateBy { it.getString("id") }
+        // empreinte de chaque morceau quand les deux copies étaient identiques, à la dernière synchronisation
+        val base = synchronized(this) { pc.optJSONObject("base") ?: JSONObject().also { pc.put("base", it) } }
 
         val toGet = remote.filter { it.getString("id") !in known }.mapNotNull { t -> inside(folder, t.getString("path"))?.takeIf { !it.exists() }?.let { t to it } }
         val toSend = localIds.filterKeys { it !in remoteKnown }
 
+        // Morceaux présents des deux côtés mais différents (titre, artiste, pochette… modifiés) : la copie modifiée
+        // depuis la dernière synchronisation remplace l'autre. Si on ne peut pas savoir (jamais synchronisés, ou modifiés
+        // des deux côtés), celle de l'ordinateur l'emporte.
+        val toUpdateHere = mutableListOf<Pair<JSONObject, File>>()
+        val toUpdateThere = mutableListOf<Pair<JSONObject, File>>()
+        for ((trackId, file) in localIds) {
+            val r = remoteById[trackId] ?: continue
+            val remoteHash = r.optString("hash").ifEmpty { null } ?: continue
+            val localHash = try { fileHash(file) } catch (_: IOException) { continue }
+            if (localHash == remoteHash) {
+                synchronized(this) { base.put(trackId, localHash) }
+                continue
+            }
+            if (base.optString(trackId) == remoteHash) toUpdateThere += r to file else toUpdateHere += r to file
+        }
+
         var received = 0
         var sent = 0
-        for ((i, pair) in toGet.withIndex()) {
-            val (track, dest) = pair
-            progress("Réception ${i + 1}/${toGet.size} : ${dest.nameWithoutExtension}")
+        val playing = playingPath()
+
+        // Fichier de l'ordinateur → `dest` (remplacé s'il existe : on passe par un fichier .part)
+        fun receive(track: JSONObject, dest: File) {
             val (conn, _) = open(address, port, "/sync/file?path=" + URLEncoder.encode(track.getString("path"), "UTF-8"), id, token, 30000)
             try {
                 check(conn)
@@ -533,28 +635,55 @@ object Sync {
             } finally {
                 conn.disconnect()
             }
-            remember(folder.absolutePath, listOf(track.getString("id")))
+            val trackId = track.getString("id")
+            remember(folder.absolutePath, listOf(trackId))
+            track.optString("hash").ifEmpty { null }?.let { synchronized(this) { base.put(trackId, it) } }
             received++
             synchronized(this) { activity?.put("received", received) }
         }
-        for ((i, entry) in toSend.entries.withIndex()) {
-            val (trackId, source) = entry
-            val rel = source.relativeTo(folder).invariantSeparatorsPath
-            progress("Envoi ${i + 1}/${toSend.size} : ${source.nameWithoutExtension}")
-            val (conn, _) = open(address, port, "/sync/file?path=" + URLEncoder.encode(rel, "UTF-8") + "&id=" + URLEncoder.encode(trackId, "UTF-8"), id, token, 60000)
+
+        // `source` → l'ordinateur, sous `rel` ; `replace` : l'empreinte de la copie de l'ordinateur à remplacer
+        fun send(trackId: String, source: File, rel: String, replace: String?) {
+            val query = "/sync/file?path=" + URLEncoder.encode(rel, "UTF-8") + "&id=" + URLEncoder.encode(trackId, "UTF-8") +
+                (replace?.let { "&replace=$it" } ?: "")
+            val (conn, _) = open(address, port, query, id, token, 60000)
             try {
                 conn.requestMethod = "PUT"
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/octet-stream")
                 conn.setFixedLengthStreamingMode(source.length())
                 source.inputStream().use { input -> conn.outputStream.use { input.copyTo(it) } }
+                if (conn.responseCode == 409) return // ouvert dans le lecteur de l'ordinateur : la prochaine fois
                 check(conn)
                 val reply = JSONObject(conn.inputStream.use { String(it.readBytes()) })
-                if (!reply.optBoolean("skipped")) sent++
+                if (reply.optBoolean("skipped")) return
+                sent++
+                synchronized(this) { base.put(trackId, fileHash(source)) }
             } finally {
                 conn.disconnect()
             }
             synchronized(this) { activity?.put("sent", sent) }
+        }
+
+        for ((i, pair) in toGet.withIndex()) {
+            progress("Réception ${i + 1}/${toGet.size} : ${pair.second.nameWithoutExtension}")
+            receive(pair.first, pair.second)
+        }
+        for ((i, pair) in toUpdateHere.withIndex()) {
+            val (track, file) = pair
+            if (file.path == playing) continue // en cours d'écoute : remplacé la fois suivante
+            progress("Mise à jour ${i + 1}/${toUpdateHere.size} : ${file.nameWithoutExtension}")
+            receive(track, file)
+        }
+        for ((i, entry) in toSend.entries.withIndex()) {
+            val (trackId, source) = entry
+            progress("Envoi ${i + 1}/${toSend.size} : ${source.nameWithoutExtension}")
+            send(trackId, source, source.relativeTo(folder).invariantSeparatorsPath, null)
+        }
+        for ((i, pair) in toUpdateThere.withIndex()) {
+            val (track, file) = pair
+            progress("Envoi des modifications ${i + 1}/${toUpdateThere.size} : ${file.nameWithoutExtension}")
+            send(track.getString("id"), file, track.getString("path"), track.getString("hash"))
         }
         request(address, port, "POST", "/sync/done", JSONObject().put("received", received).put("sent", sent), id, token)
         synchronized(this) {

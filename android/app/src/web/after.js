@@ -31,33 +31,98 @@
 
   // ---------- Fond flou ----------
 
-  // La palette de la pochette (--fx-palette, 24 × 6 pixels, posée par effects.js) adoucie une fois : agrandie et
-  // floutée dans un petit canevas, que l'écran n'a plus qu'à étirer (voir mobile.css, .fx-palette)
+  // La palette de la pochette (--fx-palette, 24 × 6 pixels, posée par effects.js) préparée une fois : agrandie,
+  // floutée, saturée et assombrie (--fx-palette-cut : une pochette claire l'est davantage) dans un petit canevas, posé
+  // sur son propre élément (mobile.css, .fx-palette-img) : l'écran n'a plus qu'à l'étirer et le faire dériver, sans
+  // filtre à recalculer
   const bar = document.getElementById('bar');
+  const palette = document.createElement('div');
+  palette.className = 'fx-palette-img';
+  bar.querySelector('.fx-palette').append(palette);
   let lastPalette = null;
   function softenPalette() {
     const value = bar.style.getPropertyValue('--fx-palette');
-    if (value === lastPalette) return;
-    lastPalette = value;
+    const cut = parseFloat(bar.style.getPropertyValue('--fx-palette-cut')) || 0;
+    if (`${value}|${cut}` === lastPalette) return;
+    const key = lastPalette = `${value}|${cut}`;
     const url = /url\("?([^")]+)"?\)/.exec(value)?.[1];
-    if (!url) return bar.style.removeProperty('--fx-palette-soft');
+    if (!url) return palette.style.removeProperty('background-image');
     const img = new Image();
     img.onload = () => {
-      if (lastPalette !== value) return;
+      if (lastPalette !== key) return;
       const W = 96, H = 72, pad = 12;
       const canvas = document.createElement('canvas');
       canvas.width = W; canvas.height = H;
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
       // la palette déborde du canevas, pour que le flou ne s'assombrisse pas sur les bords
-      ctx.filter = 'blur(6px)';
+      ctx.filter = `blur(6px) saturate(1.35) brightness(${(0.9 * (1 - cut)).toFixed(3)})`;
       ctx.drawImage(img, -pad, -pad, W + 2 * pad, H + 2 * pad);
-      bar.style.setProperty('--fx-palette-soft', `url("${canvas.toDataURL('image/png')}")`);
+      palette.style.backgroundImage = `url("${canvas.toDataURL('image/png')}")`;
     };
     img.src = url;
   }
   new MutationObserver(softenPalette).observe(bar, { attributes: true, attributeFilter: ['style'] });
   softenPalette();
+
+  // ---------- Lueur de la pochette ----------
+
+  // La voix éclaire la pochette par-derrière (mobile.css, .fx-cover-glow) : une lueur faite de la pochette elle-même,
+  // floutée, plus vive et plus claire, une fois par morceau dans un petit canevas, avec une marge où le flou s'étale.
+  // L'élément déborde de la pochette d'autant (un quart de sa taille de chaque côté), pour que l'image floutée tombe
+  // pile derrière elle.
+  const GLOW_SIZE = 64, GLOW_PAD = 16;
+  const coverEl = document.getElementById('cover');
+  const glow = document.createElement('div');
+  glow.className = 'fx-cover-glow';
+  bar.prepend(glow);
+
+  // La place de la pochette dans #bar, sans l'enfoncement d'un coup (offset* ignorent les transformations) ; elle
+  // bouge avec la taille de l'écran, les marges des barres du système (--inset-*, posées sur la racine) et le champ
+  // YouTube (body.yt), qui ne changent pas forcément sa taille : on les surveille tous
+  let placing = 0;
+  function placeGlow() {
+    cancelAnimationFrame(placing);
+    placing = requestAnimationFrame(() => {
+      const m = coverEl.offsetWidth * GLOW_PAD / GLOW_SIZE;
+      Object.assign(glow.style, {
+        left: `${coverEl.offsetLeft - m}px`, top: `${coverEl.offsetTop - m}px`,
+        width: `${coverEl.offsetWidth + 2 * m}px`, height: `${coverEl.offsetHeight + 2 * m}px`,
+      });
+    });
+  }
+  const resized = new ResizeObserver(placeGlow);
+  for (const el of [coverEl, bar, document.getElementById('body')]) resized.observe(el);
+  new MutationObserver(placeGlow).observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+  new MutationObserver(placeGlow).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  addEventListener('resize', placeGlow);
+  placeGlow();
+
+  let glowFor = null;
+  function blurCover() {
+    const src = ui.coverImg.hidden || !ui.coverImg.src ? '../../assets/cover.svg' : ui.coverImg.src;
+    if (src === glowFor) return;
+    glowFor = src;
+    const img = new Image();
+    img.onload = () => {
+      if (glowFor !== src) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = GLOW_SIZE + 2 * GLOW_PAD;
+      const ctx = canvas.getContext('2d');
+      // plus vive et plus claire que l'image : c'est une lumière
+      ctx.filter = 'blur(9px) saturate(1.8) brightness(1.5)';
+      ctx.drawImage(img, GLOW_PAD, GLOW_PAD, GLOW_SIZE, GLOW_SIZE);
+      glow.style.backgroundImage = `url("${canvas.toDataURL('image/png')}")`;
+      bar.classList.add('fx-cover-glow-on');
+    };
+    // image illisible : pas de lueur plutôt que celle du morceau précédent
+    img.onerror = () => {
+      if (glowFor === src) bar.classList.remove('fx-cover-glow-on');
+    };
+    img.src = src;
+  }
+  new MutationObserver(blurCover).observe(ui.coverImg, { attributes: true, attributeFilter: ['src', 'hidden'] });
+  blurCover();
 
   // ---------- Commandes propres au téléphone ----------
 

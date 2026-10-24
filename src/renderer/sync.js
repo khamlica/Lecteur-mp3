@@ -103,6 +103,12 @@ function renderPairing(text) {
   };
   const start = () => row(button(text.pair, () => act(state.role === 'pc' ? 'pair-start' : 'pair-search'), 'action primary'));
 
+  // ordinateur : le pare-feu de Windows bloquerait le téléphone
+  if (state.role === 'pc' && state.firewall === false && (p || state.devices.length)) {
+    box.append(message('Le pare-feu de Windows empêche le téléphone de trouver cet ordinateur.', true),
+      row(button('Autoriser dans le pare-feu', () => act('firewall'))));
+  }
+
   switch (p?.step) {
     case 'waiting': // ordinateur : en attente du téléphone
       box.append(el('p', 'waiting', 'En attente du téléphone'),

@@ -1661,10 +1661,14 @@ function applyFx(el, themeName, base, v, now) {
   // … et la pochette qui s'enfonce dans le verre sur chaque coup, puis revient avec un rebond amorti
   el.style.setProperty('--fx-press', (v.press ?? v.pulse).toFixed(3));
   el.style.setProperty('--fx-rim', Math.min(1, Math.max(v.punch || 0, 0.4 * v.pressure)).toFixed(3));
+  // les coups de basse seuls (sans la basse tenue) : le bord de l'écran du téléphone s'illumine sur eux
+  el.style.setProperty('--fx-punch', Math.min(1, v.punch || 0).toFixed(3));
   el.style.setProperty('--fx-glint', (FX_THEMES[themeName]?.colorless ? [255, 255, 255] : fxMix(v.coverColor || p.color, [255, 255, 255], 0.6)).join(' '));
   el.style.setProperty('--fx-pulse', v.pulse.toFixed(3));
   el.style.setProperty('--fx-pulse-glow', v.pulseGlow.toFixed(3));
   el.style.setProperty('--fx-pressure', v.pressure.toFixed(3));
+  // moment fort (refrain), dosé : sur le téléphone, le fond bat alors sur les coups de basse (android/mobile.css)
+  el.style.setProperty('--fx-peak', (v.peak || 0).toFixed(3));
   el.style.setProperty('--fx-accent', warm.join(' '));
   // Halo d'ambiance, relevé par la basse tenue (voir fxDose) ; dans un passage rêveur (voir fxDreamy), il
   // respire lentement (~4 s) et se réchauffe, s'il est là
@@ -1814,6 +1818,10 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
   let warm = fxWarmFrom(null); // couleur chaude de la pochette, pour la basse tenue
   let track = null;            // chemin du morceau en cours
   const profiles = new Map();  // chemin → profil (null : analyse impossible), pour ne pas réanalyser
+  // chemin → moment où réessayer une analyse qui a échoué (mémoire, fichier en cours de réécriture par la
+  // synchronisation ou l'édition…) : un échec n'est pas définitif, sinon le morceau perdrait ses effets jusqu'à
+  // la fermeture du lecteur (sur le téléphone, la page vit des jours)
+  const retryAt = new Map();
   let analysing = false;
 
   const enabled = () => config.pulse || config.pressure || config.halo || config.notes;
@@ -1896,22 +1904,29 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     // Déjà analysé (ou impossible à analyser) ; on réanalyse si sa chronologie a été libérée.
     const known = profiles.get(path);
     if (!path || !enabled() || analysing || (profiles.has(path) && (!known || known.timeline))) return;
+    if (retryAt.get(path) > Date.now()) return;
     if (!(audio.duration > 0)) {
       audio.addEventListener('loadedmetadata', requestProfile, { once: true });
       return;
     }
     if (audio.duration > FX_PROFILE_MAX) return profiles.set(path, null);
     analysing = true;
-    let profile = null;
+    let profile = null, failed = false;
     try {
       const data = await readFile(path);
       if (data) profile = await analyseTrackOffThread(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
     } catch (err) {
       console.warn('Pré-analyse impossible :', err);
+      failed = true;
     }
     analysing = false;
     profiles.delete(path); // réinsérée en dernier : l'ordre de la table est celui des analyses
-    profiles.set(path, profile);
+    // échec : réessayé à la prochaine écoute du morceau, au plus tôt dans une minute
+    if (failed) retryAt.set(path, Date.now() + 60000);
+    else {
+      retryAt.delete(path);
+      profiles.set(path, profile);
+    }
     // Les chronologies pèsent ~0,5 Mo chacune : on ne garde que celles des derniers morceaux analysés,
     // et toujours celle du morceau en cours (sinon il serait réanalysé sans fin).
     const withTimeline = [...profiles].filter(([key, p]) => p && p.timeline && key !== track);

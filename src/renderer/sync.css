@@ -167,8 +167,9 @@
 /* le QR code, sur fond blanc : un appareil photo le lit mal sur le verre sombre */
 .qr {
   align-self: center;
-  width: 220px;
-  height: 220px;
+  /* au moins 3 pixels par module pour les codes les plus denses (une vingtaine de morceaux) */
+  width: 300px;
+  height: 300px;
   padding: 8px;
   border-radius: 10px;
   background: #fff;

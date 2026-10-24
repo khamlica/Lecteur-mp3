@@ -18,6 +18,7 @@ const https = require('https');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 const qrcode = require('qrcode-generator');
 
 const DISCOVERY_PORT = 47810;
@@ -27,7 +28,7 @@ const MAX_UPLOAD = 400 * 1024 * 1024;
 const PAIR_ATTEMPTS = 5;      // tentatives d'association par ouverture de la fenêtre
 const PAIR_TIMEOUT = 120000;  // le temps de comparer les codes
 const YOUTUBE_ID = /(?:[?&]v=|youtu\.be\/|\/shorts\/)([\w-]{11})/;
-const QR_IDS = 120;           // vidéos par QR code : au-delà, le code devient trop fin pour un appareil photo
+const QR_CHARS = 900;         // caractères par QR code : au-delà, le code devient trop fin pour un appareil photo
 
 // ---------- Certificat (X.509 auto-signé, clé EC P-256), écrit à la main en DER ----------
 
@@ -113,6 +114,32 @@ async function trackId(file) {
 
 const nameId = (name) => `name:${name.normalize('NFC').toLowerCase()}`;
 
+// Empreinte du contenu (SHA-256) : deux copies identiques ont la même ; un titre, un artiste ou une pochette
+// modifiés la changent. Sert à repérer de quel côté un morceau a été modifié depuis la dernière synchronisation.
+const hashCache = new Map(); // chemin → { size, mtimeMs, hash }
+
+async function fileHash(file) {
+  const stat = await fs.promises.stat(file);
+  const cached = hashCache.get(file);
+  if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached.hash;
+  const hash = await new Promise((resolve, reject) => {
+    const h = crypto.createHash('sha256');
+    fs.createReadStream(file).on('error', reject).on('data', (chunk) => h.update(chunk)).on('end', () => resolve(h.digest('hex')));
+  });
+  hashCache.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, hash });
+  return hash;
+}
+
+async function titleArtist(file) {
+  try {
+    mm ??= await import('music-metadata');
+    const { common } = await mm.parseFile(file, { duration: false, skipCovers: true });
+    return { title: common.title || '', artist: common.artist || '' };
+  } catch {
+    return { title: '', artist: '' };
+  }
+}
+
 // Chemin relatif reçu du téléphone → chemin dans le dossier de musique, ou null s'il en sortirait. Les caractères
 // interdits par Windows (permis par Android) sont remplacés.
 function safePath(folder, rel) {
@@ -126,7 +153,9 @@ function safePath(folder, rel) {
 // ---------- Le service ----------
 
 // deps : { dataDir, folder() (dossier de musique, créé au besoin), scan(dir) (comme scanFolder),
-//          onChange(state) (fenêtre à rafraîchir), onLibraryChanged() (nouveaux morceaux arrivés) }
+//          onChange(state) (fenêtre à rafraîchir), onLibraryChanged() (nouveaux morceaux arrivés),
+//          busy(file) (morceau ouvert par le lecteur : pas remplacé maintenant), firewall (voir main.js, facultatif :
+//          { check() → true | false | null, allow() → promesse }) }
 function createSync(deps) {
   const storeFile = path.join(deps.dataDir, 'sync.json');
   let store = { phones: [], known: {} };
@@ -185,9 +214,14 @@ function createSync(deps) {
     for (const t of await deps.scan(folder)) {
       const tid = await trackId(t.path);
       if (!tid) continue;
-      let size = 0;
-      try { size = (await fs.promises.stat(t.path)).size; } catch {}
-      tracks.push({ id: tid, path: path.relative(folder, t.path).split(path.sep).join('/'), size });
+      let size = 0, hash = null;
+      try {
+        size = (await fs.promises.stat(t.path)).size;
+        hash = await fileHash(t.path);
+      } catch {
+        continue; // disparu entre-temps
+      }
+      tracks.push({ id: tid, path: path.relative(folder, t.path).split(path.sep).join('/'), size, hash });
     }
     remember(folder, tracks.map((t) => t.id));
     return { folder, tracks };
@@ -208,9 +242,25 @@ function createSync(deps) {
         message: pairing.message || null,
       },
       activity: activity && { peer: activity.phone.name, received: activity.received, sent: activity.sent },
+      // false : le pare-feu de Windows bloquerait le téléphone (bouton « Autoriser » dans la fenêtre)
+      firewall: firewallOk,
     };
   }
   const changed = () => deps.onChange(state());
+
+  // Le téléphone se connecte à l'ordinateur : sans règle du pare-feu de Windows pour le lecteur, il ne le trouve
+  // pas. Vérifié quand le serveur démarre ; la règle est ajoutée sur demande (une confirmation de Windows).
+  let firewallOk = null;
+  async function checkFirewall({ fix = false } = {}) {
+    if (!deps.firewall) return;
+    firewallOk = await deps.firewall.check().catch(() => null);
+    // l'association vient d'être lancée : la règle est ajoutée aussitôt (Windows demande confirmation)
+    if (firewallOk === false && fix) {
+      await deps.firewall.allow().catch(() => {});
+      firewallOk = await deps.firewall.check().catch(() => null);
+    }
+    changed();
+  }
 
   // ---------- Réseau ----------
 
@@ -218,8 +268,10 @@ function createSync(deps) {
   // demande du pare-feu Windows pour qui n'utilise pas la synchronisation.
   function updateServer() {
     const needed = store.phones.length > 0 || !!pairing;
-    if (needed && !server) start();
-    else if (!needed && server) stop();
+    if (needed && !server) {
+      start();
+      checkFirewall();
+    } else if (!needed && server) stop();
   }
 
   function start() {
@@ -320,11 +372,22 @@ function createSync(deps) {
         const tid = url.searchParams.get('id');
         const length = Number(req.headers['content-length']);
         if (!file || !tid || !(length > 0) || length > MAX_UPLOAD) return send(res, 400, { error: 'fichier refusé' });
+        // `replace` : le téléphone a modifié ce morceau (titre, pochette…) et le remplace, à condition que la copie
+        // d'ici soit toujours celle qu'il a vue (empreinte) : une modification faite ici entre-temps n'est pas écrasée
+        const replace = url.searchParams.get('replace');
         if (fs.existsSync(file)) {
-          // jamais remplacé : un fichier de ce nom est déjà là
-          remember(folder, [tid]);
-          req.resume();
-          return send(res, 200, { skipped: true });
+          let current = null;
+          if (replace) try { current = await fileHash(file); } catch {}
+          if (!replace || current !== replace) {
+            // sinon jamais remplacé : un fichier de ce nom est déjà là
+            remember(folder, [tid]);
+            req.resume();
+            return send(res, 200, { skipped: true });
+          }
+          if (deps.busy?.(file)) {
+            req.resume();
+            return send(res, 409, { error: 'morceau ouvert dans le lecteur : remplacé à la prochaine synchronisation' });
+          }
         }
         await fs.promises.mkdir(path.dirname(file), { recursive: true });
         const part = `${file}.part`;
@@ -441,9 +504,12 @@ function createSync(deps) {
   // ---------- Depuis la fenêtre ----------
 
   const actions = {
+    // règle du pare-feu de Windows pour le lecteur (une confirmation de Windows)
+    firewall: () => checkFirewall({ fix: true }),
     'pair-start': () => {
       pairing = { attempts: 0, session: null, step: 'waiting', message: null };
       updateServer();
+      if (firewallOk !== true) checkFirewall({ fix: true });
     },
     'pair-accept': () => {
       if (!pairing?.session?.code) return;
@@ -467,24 +533,43 @@ function createSync(deps) {
     },
   };
 
-  // Sans réseau commun : la liste des vidéos YouTube d'origine, en QR codes à scanner avec le téléphone, qui
-  // retélécharge celles qui lui manquent (Sync.kt, scanQr). « HANABI1|page/pages|id id id… » (ids de 11 caractères
-  // mis bout à bout).
+  // Sans réseau commun : la liste des vidéos YouTube d'origine, avec le titre et l'artiste d'ici, en QR codes à scanner
+  // avec le téléphone, qui retélécharge celles qui lui manquent (Sync.kt, scanned). « HANABI2|page/pages|données »,
+  // les données : lignes « id⇥titre⇥artiste », compressées (deflate) puis en base64url (que des caractères ASCII :
+  // les titres coréens ou japonais passent sans souci d'encodage).
   async function qrCodes() {
-    const { tracks } = await library();
-    const ids = [...new Set(tracks.map((t) => t.id).filter((t) => t.startsWith('yt:')).map((t) => t.slice(3)))];
+    const { folder, tracks } = await library();
+    const seen = new Set();
+    const lines = [];
+    for (const t of tracks) {
+      if (!t.id.startsWith('yt:') || seen.has(t.id)) continue;
+      seen.add(t.id);
+      const { title, artist } = await titleArtist(path.join(folder, ...t.path.split('/')));
+      const clean = (v) => v.replace(/[\t\n\r]+/g, ' ').trim();
+      lines.push([t.id.slice(3), clean(title), clean(artist)].join('\t'));
+    }
+    const encode = (list) => zlib.deflateRawSync(Buffer.from(list.join('\n'))).toString('base64url');
     const pages = [];
-    for (let i = 0; i < ids.length; i += QR_IDS) pages.push(ids.slice(i, i + QR_IDS));
+    let page = [];
+    for (const line of lines) {
+      if (page.length && encode([...page, line]).length > QR_CHARS) {
+        pages.push(page);
+        page = [];
+      }
+      page.push(line);
+    }
+    if (page.length) pages.push(page);
     return {
       total: tracks.length,
-      youtube: ids.length,
-      codes: pages.map((page, i) => {
+      youtube: lines.length,
+      codes: pages.map((list, i) => {
+        const text = `HANABI2|${i + 1}/${pages.length}|${encode(list)}`;
         const qr = qrcode(0, 'L');
-        qr.addData(`HANABI1|${i + 1}/${pages.length}|${page.join('')}`);
+        qr.addData(text);
         qr.make();
         // en SVG : net à toute taille
         const svg = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
-        return { image: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`, count: page.length };
+        return { image: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`, text, count: list.length };
       }),
     };
   }

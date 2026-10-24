@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- La barre flottante du lecteur de bureau, sur l'écran d'accueil : pochette, titre, artiste, avancement et
-     commandes, sur le verre teinté par la pochette (fond dessiné par PlayerWidget) -->
+<!-- La barre flottante du lecteur de bureau, sur l'écran d'accueil : pochette, titre, artiste et commandes, avancement
+     dessous, comme sur l'ordinateur, sur le verre teinté par la pochette (fond dessiné par PlayerWidget). Les tailles
+     ci-dessous sont celles d'un widget d'une rangée : PlayerWidget les ajuste à la hauteur de la barre. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
@@ -25,80 +26,95 @@
 
         <ImageView
             android:id="@+id/cover"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
             android:scaleType="centerCrop"
             android:src="@mipmap/ic_launcher"
             android:contentDescription="Ouvrir Hanabi Player" />
 
         <LinearLayout
+            android:id="@+id/body"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="10dp"
-            android:layout_marginEnd="4dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/title"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:singleLine="true"
-                android:text="Hanabi Player"
-                android:textColor="#FFFFFFFF"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/artist"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:singleLine="true"
-                android:textColor="#ADFFFFFF"
-                android:textSize="12sp" />
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:singleLine="true"
+                        android:text="Hanabi Player"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/artist"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:singleLine="true"
+                        android:textColor="#ADFFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <ImageButton
+                    android:id="@+id/prev"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="Précédent"
+                    android:padding="8dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_prev" />
+
+                <ImageButton
+                    android:id="@+id/play"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/widget_play_bg"
+                    android:contentDescription="Lecture"
+                    android:padding="10dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_play_dark" />
+
+                <ImageButton
+                    android:id="@+id/next"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="Suivant"
+                    android:padding="8dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_next" />
+            </LinearLayout>
 
             <ProgressBar
                 android:id="@+id/progress"
                 style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
                 android:layout_height="3dp"
-                android:layout_marginTop="7dp"
+                android:layout_marginTop="6dp"
                 android:max="1000"
                 android:progress="0"
                 android:progressDrawable="@drawable/widget_progress" />
         </LinearLayout>
-
-        <ImageButton
-            android:id="@+id/prev"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:background="@android:color/transparent"
-            android:contentDescription="Précédent"
-            android:padding="8dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_prev" />
-
-        <ImageButton
-            android:id="@+id/play"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/widget_play_bg"
-            android:contentDescription="Lecture"
-            android:padding="9dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_play_dark" />
-
-        <ImageButton
-            android:id="@+id/next"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:background="@android:color/transparent"
-            android:contentDescription="Suivant"
-            android:padding="8dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_next" />
     </LinearLayout>
 
     <ImageView

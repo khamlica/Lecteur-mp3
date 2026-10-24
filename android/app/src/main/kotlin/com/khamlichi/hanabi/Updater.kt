@@ -5,14 +5,15 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.util.Log
 import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.File
 
 // Mises à jour automatiques, comme celles de l'app de bureau : les versions sont publiées dans les Releases du dépôt
-// GitHub (privé) par .github/workflows/release.yml, avec l'APK. Pour les lire, l'app utilise le jeton en lecture
-// seule que GitHub Actions ajoute à l'APK : une build faite en local n'en a pas et ne se met pas à jour.
+// GitHub (public) par .github/workflows/release.yml, avec l'APK, et se lisent sans jeton. Une build debug ne se met
+// pas à jour : signée avec une autre clé, elle ne pourrait pas être remplacée par l'APK publié.
 // L'APK est téléchargé en arrière-plan ; Android demande ensuite d'accepter l'installation.
 object Updater {
     private const val TAG = "Hanabi"
@@ -22,12 +23,6 @@ object Updater {
 
     @Volatile var ready: String? = null // version téléchargée, prête à installer
         private set
-
-    private fun token(context: Context): String? = try {
-        JSONObject(context.assets.open("update-token.json").bufferedReader().readText()).getString("token")
-    } catch (_: Exception) {
-        null
-    }
 
     private fun apk(context: Context) = File(context.cacheDir, "updates/Hanabi-Player.apk")
 
@@ -43,10 +38,9 @@ object Updater {
 
     // → la version prête à installer, ou null
     fun check(context: Context): String? {
-        val token = token(context) ?: return null
+        if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) return null
         try {
-            val auth = mapOf("Authorization" to "Bearer $token", "Accept" to "application/vnd.github+json")
-            val res = Http.get(LATEST, 10000, auth)
+            val res = Http.get(LATEST, 10000, mapOf("Accept" to "application/vnd.github+json"))
             if (!res.ok) return null
             val release = JSONObject(res.text)
             val version = release.getString("tag_name").removePrefix("v")
@@ -57,7 +51,7 @@ object Updater {
             val marker = File(dest.path + ".version")
             if (!(dest.exists() && marker.exists() && marker.readText() == version)) {
                 dest.parentFile?.mkdirs()
-                Http.download(asset.getString("url"), mapOf("Authorization" to "Bearer $token", "Accept" to "application/octet-stream"), dest)
+                Http.download(asset.getString("browser_download_url"), emptyMap(), dest)
                 marker.writeText(version)
             }
             ready = version

@@ -23,16 +23,6 @@ jobs:
 
       - run: npm ci
 
-      # Jeton en lecture seule qui permet à l'app de lire les Releases de ce dépôt privé.
-      # Il vient du secret UPDATE_TOKEN et n'existe que dans l'installeur.
-      - name: Ajouter le jeton de mise à jour
-        shell: bash
-        env:
-          UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
-        run: |
-          if [ -z "$UPDATE_TOKEN" ]; then echo "::error::Secret UPDATE_TOKEN manquant"; exit 1; fi
-          printf '{"token":"%s"}' "$UPDATE_TOKEN" > src/update-token.json
-
       - name: Construire l'installeur
         run: npx electron-builder --win nsis --publish never
 
@@ -71,18 +61,13 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      # Même jeton que l'installeur Windows, et la clé de signature : un APK signé autrement ne pourrait pas
-      # remplacer celui déjà installé
-      - name: Ajouter le jeton de mise à jour et la clé de signature
+      # La clé de signature : un APK signé autrement ne pourrait pas remplacer celui déjà installé
+      - name: Ajouter la clé de signature
         shell: bash
         env:
-          UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
         run: |
-          if [ -z "$UPDATE_TOKEN" ]; then echo "::error::Secret UPDATE_TOKEN manquant"; exit 1; fi
           if [ -z "$ANDROID_KEYSTORE" ]; then echo "::error::Secret ANDROID_KEYSTORE manquant"; exit 1; fi
-          mkdir -p android/app/src/main/assets
-          printf '{"token":"%s"}' "$UPDATE_TOKEN" > android/app/src/main/assets/update-token.json
           echo "$ANDROID_KEYSTORE" | base64 -d > android/release.jks
 
       - name: Construire l'APK

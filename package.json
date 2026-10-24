@@ -43,7 +43,6 @@
         "provider": "github",
         "owner": "khamlica",
         "repo": "Lecteur-mp3",
-        "private": true,
         "releaseType": "release"
       }
     ],

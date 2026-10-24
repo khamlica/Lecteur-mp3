@@ -1,8 +1,5 @@
 node_modules/
 dist/
-# Jeton de lecture des mises à jour : ajouté à la build par GitHub Actions, jamais committé
-src/update-token.json
-
 # Modèle de séparation des instruments (HT-Demucs, ~166 Mo) : copié dans la build, jamais committé
 models/
 

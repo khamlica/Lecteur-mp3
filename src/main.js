@@ -1349,21 +1349,14 @@ ipcMain.on('fx-panel-close', () => fxPanel?.close());
 
 // ---------- Mises à jour automatiques ----------
 
-// Les versions sont publiées dans les Releases du dépôt GitHub (privé) par
-// .github/workflows/release.yml. Pour les lire, l'app utilise un jeton en lecture seule que
-// GitHub Actions ajoute à l'installeur : une build faite en local n'en a pas et ne se met pas à jour.
+// Les versions sont publiées dans les Releases du dépôt GitHub (public) par
+// .github/workflows/release.yml, et se lisent sans jeton.
 const UPDATE_CHECK_INTERVAL = 6 * 3600 * 1000;
 let updateReady = null; // version téléchargée, installée à la fermeture de l'app
 
 function setupAutoUpdate() {
   if (!app.isPackaged) return;
-  let token;
-  try {
-    ({ token } = require('./update-token.json'));
-  } catch {
-    return;
-  }
-  autoUpdater.setFeedURL({ provider: 'github', owner: 'khamlica', repo: 'Lecteur-mp3', private: true, token });
+  autoUpdater.setFeedURL({ provider: 'github', owner: 'khamlica', repo: 'Lecteur-mp3' });
   autoUpdater.on('update-downloaded', (info) => {
     updateReady = info.version;
     updateTray();

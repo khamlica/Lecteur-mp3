@@ -1,7 +1,7 @@
 {
   "name": "hanabi-player",
   "productName": "Hanabi Player",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Mini lecteur audio transparent pour Windows",
   "main": "src/main.js",
   "scripts": {

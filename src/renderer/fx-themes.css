@@ -34,6 +34,7 @@
   --fx-cover-light: 0;
   --fx-cover-edge: 76px; /* bord droit de la pochette : le halo des notes graves sort juste à côté */
   --fx-pressure: 0;
+  --fx-held: 0;  /* la basse tenue sans les coups du refrain (lueur du bas, téléphone) */
   --fx-peak: 0;
   --fx-punch: 0;
   --fx-glow: 0;

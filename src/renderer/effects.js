@@ -1573,6 +1573,10 @@ const FX_THEMES = {
   neon: { label: 'Néon', colors: [[0, 229, 255], [255, 43, 214]] },
   ember: { label: 'Braise', colors: [[196, 42, 18], [255, 176, 64]] },
   mono: { label: 'Monochrome', colors: [[255, 255, 255], [255, 255, 255]], colorless: true },
+  // (téléphone seulement) le Verre liquide, la lueur de la basse tenue vue à travers des alvéoles (android/after.js)
+  'savage-cells': { label: 'SAVAGE', colors: null, base: 'glass', phone: true },
+  // (téléphone) les mêmes alvéoles, dans le cadre 3D de SAVAGE ENHANCED adapté au plein écran
+  'savage-enhanced': { label: 'SAVAGE ENHANCED', colors: null, base: 'glass', phone: true },
 };
 
 // Contours : un cadre posé par-dessus le thème, quel qu'il soit (élément .fx-frame, data-fx-frame ; voir
@@ -1679,6 +1683,7 @@ function applyFx(el, themeName, base, v, now, frameName = 'none') {
   el.style.setProperty('--fx-pulse', v.pulse.toFixed(3));
   el.style.setProperty('--fx-pulse-glow', v.pulseGlow.toFixed(3));
   el.style.setProperty('--fx-pressure', v.pressure.toFixed(3));
+  el.style.setProperty('--fx-held', (v.steady || 0).toFixed(3));
   // moment fort (refrain), dosé : sur le téléphone, le fond bat alors sur les coups de basse (android/mobile.css)
   el.style.setProperty('--fx-peak', (v.peak || 0).toFixed(3));
   el.style.setProperty('--fx-accent', warm.join(' '));
@@ -1745,6 +1750,9 @@ function fxDose(fx, config) {
   const held = (fx.pressure || 0) * (1 - peak);
   const pressure = config.pressure
     ? fxLevel(Math.max(held * (0.65 + 0.35 * bass), peak * (0.35 + 0.65 * punch)), config.levels.pressure) : 0;
+  // la même sans les coups du refrain, qui y reste à mi-hauteur : la lueur du bas du téléphone (android/mobile.css)
+  // ne bat pas, le bord de l'écran s'en charge
+  const steady = config.pressure ? fxLevel(Math.max(held * (0.65 + 0.35 * bass), 0.5 * peak), config.levels.pressure) : 0;
   // halo d'ambiance (le fond flou) : la basse tenue le relève, le refrain aussi ; sans eux, il ne s'affiche
   // pas. Au refrain, il reste au tiers et remonte sur chaque coup de basse (glowBeat, ajouté après son
   // fondu : voir render) au lieu d'un fond clair immobile pendant 30 s
@@ -1755,7 +1763,7 @@ function fxDose(fx, config) {
   const glowBeat = config.halo && !glass ? 0.5 * fxLevel(peak * punch, config.levels.halo) : 0;
   const notes = config.notes ? config.levels.notes : 0;
   return {
-    pulse, pulseGlow, pressure, glow, glowBeat, peak, brightness: fx.brightness,
+    pulse, pulseGlow, pressure, steady, glow, glowBeat, peak, brightness: fx.brightness,
     // coups de basse (le reflet du bord du verre, en Verre liquide), avec la basse tenue
     punch: config.pressure ? fxLevel(punch, config.levels.pressure) : 0,
     // percussions (la pochette s'éclaire) avec le rythme
@@ -2085,7 +2093,10 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     v.grain = shownGrain = follow(shownGrain, v.dreamy > 0.01 ? beat : 0, dt, reducedMotion.matches ? 0.2 : 0.04, reducedMotion.matches ? 0.5 : 0.3);
     const weights = FX_SOUND_WEIGHTS[sound.effect()] || {};
     if (weights.pulse) v.pulse = fxLevel(v.pulse, weights.pulse);
-    if (weights.pressure !== undefined) v.pressure = fxLevel(v.pressure, weights.pressure);
+    if (weights.pressure !== undefined) {
+      v.pressure = fxLevel(v.pressure, weights.pressure);
+      v.steady = fxLevel(v.steady, weights.pressure);
+    }
     if (reducedMotion.matches) {
       v.pulse = shownPulse = follow(shownPulse, v.pulse, dt, 0.06, 0.2);
     }

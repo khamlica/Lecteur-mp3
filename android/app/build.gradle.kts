@@ -96,7 +96,7 @@ abstract class CopyWebTask : DefaultTask() {
         mobile.get().asFile.copyRecursively(dest.resolve("android"))
         // la page du lecteur à côté de celle du bureau (index.html) : mêmes adresses relatives (Worker des effets…)
         dest.resolve("android/player.html").renameTo(dest.resolve("player.html"))
-        for (page in listOf("menu.html", "fx-panel.html", "editor.html", "sync.html")) {
+        for (page in listOf("menu.html", "fx-panel.html", "editor.html", "sync.html", "lyrics.html")) {
             val file = dest.resolve(page)
             val html = file.readText()
             require("</title>" in html && "</head>" in html) { "$page : balises </title> et </head> introuvables" }

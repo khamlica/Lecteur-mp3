@@ -363,6 +363,14 @@ class PlayerService : Service() {
         private set
     @Volatile private var folderSetting: String? = null
 
+    // Les thèmes SAVAGE portent leur cadre (sur le widget aussi), sauf si un autre contour est choisi
+    private fun widgetFrame(theme: String, frame: String) = when {
+        frame != "none" -> frame
+        theme == "savage-cells" -> "savage"
+        theme == "savage-enhanced" -> "savage-meshy"
+        else -> frame
+    }
+
     private fun readSettingsForNative(json: String? = null) {
         try {
             val s = JSONObject(json ?: settingsFile.readText())
@@ -372,6 +380,7 @@ class PlayerService : Service() {
             var frame = s.optString("fxFrame", "none")
             // les contours SAVAGE étaient des thèmes (jusqu'à la 1.4), voir host.js
             if (theme == "savage" || theme == "savage-meshy") { frame = theme; theme = "glass" }
+            frame = widgetFrame(theme, frame)
             if (theme != state.theme || frame != state.frame) {
                 state.theme = theme
                 state.frame = frame
@@ -409,7 +418,7 @@ class PlayerService : Service() {
         if (info.has("duration")) state.duration = info.optDouble("duration", 0.0).takeIf { it.isFinite() } ?: 0.0
         if (info.has("rate")) state.rate = info.getDouble("rate")
         if (info.has("theme")) state.theme = info.getString("theme")
-        if (info.has("frame")) state.frame = info.getString("frame")
+        if (info.has("frame")) state.frame = widgetFrame(state.theme, info.getString("frame"))
         info.optJSONArray("color")?.let { state.color = Color.rgb(it.getInt(0), it.getInt(1), it.getInt(2)) }
         state.updatedAt = android.os.SystemClock.elapsedRealtime()
 

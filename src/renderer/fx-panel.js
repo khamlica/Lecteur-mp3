@@ -45,7 +45,8 @@ function addCard(kind, name, label, parent) {
   previews.push({ kind, name, card, el: card.querySelector('.preview') });
 }
 
-for (const [name, theme] of Object.entries(FX_THEMES)) addCard('theme', name, theme.label, $('themes'));
+const onPhone = document.documentElement.classList.contains('android');
+for (const [name, theme] of Object.entries(FX_THEMES)) if (onPhone || !theme.phone) addCard('theme', name, theme.label, $('themes'));
 for (const [name, frame] of Object.entries(FX_FRAMES)) addCard('frame', name, frame.label, $('frames'));
 
 // ---------- Affichage des réglages ----------

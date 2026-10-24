@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { pathToFileURL } = require('url');
 const { createSync } = require('./sync');
+const { createLyrics } = require('./lyrics');
 
 const WIN_WIDTH = 540;
 const WIN_HEIGHT = 88;
@@ -38,6 +39,8 @@ const DEFAULTS = {
   fxColorMode: 'theme',    // 'theme' | 'cover' | 'custom'
   fxCustomColor: '#ff7a3d',
   soundFx: 'none',         // effet sonore à l'écoute (voir SOUND_EFFECTS)
+  lyricsOpen: false,       // fenêtre des paroles affichée
+  lyricsRoman: true,       // prononciation en lettres latines sous le coréen et le japonais
 };
 
 let settings = { ...DEFAULTS };
@@ -785,7 +788,10 @@ function createWindow() {
     settings.bounds = { x, y };
     saveSettings();
   });
-  win.on('move', () => frameWin && !frameWin.isDestroyed() && frameWin.setBounds(frameBounds(frameSkin || settings.fxFrame)));
+  win.on('move', () => {
+    if (frameWin && !frameWin.isDestroyed()) frameWin.setBounds(frameBounds(frameSkin || settings.fxFrame));
+    if (lyricsWin && !lyricsWin.isDestroyed()) lyricsWin.setBounds(lyricsBounds());
+  });
 
   // ✕ ou Alt+F4 : on cache au lieu de quitter
   win.on('close', (e) => {
@@ -799,10 +805,12 @@ function createWindow() {
     setTimeout(() => !win.isDestroyed() && win.webContents.invalidate(), 50);
     updateTray();
     updateFrameWindow();
+    updateLyricsWindow();
   });
   win.on('hide', () => {
     updateTray();
     updateFrameWindow();
+    updateLyricsWindow();
   });
   // Clic droit sur une zone de déplacement : notre menu à la place du menu système de Windows
   win.on('system-context-menu', (e) => {
@@ -918,6 +926,10 @@ function setTransparent(flag) {
   send('transparent', flag); // le fond plein ne dépend que de la page : il s'applique quoi qu'il arrive
   try {
     win.setBackgroundMaterial(flag ? 'acrylic' : 'none');
+    if (lyricsWin && !lyricsWin.isDestroyed()) {
+      lyricsWin.setBackgroundMaterial(flag ? 'acrylic' : 'none');
+      lyricsWin.webContents.send('lyrics-transparent', flag);
+    }
   } catch (err) {
     console.warn('Changement du fond de verre impossible :', err.message);
   }
@@ -977,6 +989,7 @@ function setEffects(partial) {
   sendFxPanel();
   updateTray();
   updateFrameWindow();
+  updateLyricsWindow(); // un contour qui déborde décale la fenêtre des paroles
 }
 
 // ---------- Fenêtre « Personnaliser les effets » ----------
@@ -1248,6 +1261,7 @@ function updateTray() {
       click: (item) => setTransparent(item.checked),
     },
     { label: 'Effets', submenu: effectsMenu() },
+    { label: 'Paroles', type: 'checkbox', checked: settings.lyricsOpen, click: (item) => { showWindow(); setLyricsOpen(item.checked); } },
     { label: 'Changer de dossier…', click: () => { showWindow(); send('choose-folder'); } },
     { label: 'Télécharger depuis YouTube…', click: () => { showWindow(); send('youtube'); } },
     { label: 'Synchroniser avec le téléphone…', click: openSyncWindow },
@@ -1364,6 +1378,131 @@ ipcMain.on('playback', (_e, info) => {
 ipcMain.handle('fx-panel-load', () => fxPanelState());
 ipcMain.on('fx-panel-set', (_e, partial) => setEffects(partial));
 ipcMain.on('fx-panel-close', () => fxPanel?.close());
+
+// ---------- Paroles (lyrics.js) ----------
+
+// Fenêtre accrochée au lecteur, de sa largeur : au-dessus (et au-dessus du contour s'il déborde), ou en dessous
+// s'il n'y a pas la place. Elle le suit, se cache et réapparaît avec lui.
+const LYRICS_HEIGHT = 190;
+const LYRICS_GAP = 6;
+let lyrics = null;
+let lyricsWin = null;
+let lyricsData = null;  // paroles du morceau en cours, telles qu'envoyées à la fenêtre
+let lyricsClock = null; // dernière position connue du lecteur : { file, time, playing, rate, at }
+let lyricsLoading = null;
+
+function lyricsBounds() {
+  const p = win.getBounds();
+  const a = screen.getDisplayMatching(p).workArea;
+  const frame = FRAME_SKINS[settings.fxFrame];
+  let y = p.y - (frame ? frame.top : 0) - LYRICS_GAP - LYRICS_HEIGHT;
+  if (y < a.y) y = p.y + p.height + (frame ? frame.height - frame.top - p.height : 0) + LYRICS_GAP;
+  return { x: p.x, y: Math.min(y, a.y + a.height - LYRICS_HEIGHT), width: p.width, height: LYRICS_HEIGHT };
+}
+
+function updateLyricsWindow() {
+  const wanted = settings.lyricsOpen && win && !win.isDestroyed() && win.isVisible();
+  if (!wanted) {
+    if (lyricsWin && !lyricsWin.isDestroyed()) lyricsWin.hide();
+    return;
+  }
+  if (!lyricsWin || lyricsWin.isDestroyed()) {
+    lyricsWin = new BrowserWindow({
+      ...lyricsBounds(),
+      parent: win,
+      frame: false,
+      resizable: false,
+      movable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      backgroundMaterial: settings.transparent ? 'acrylic' : 'none',
+      backgroundColor: '#00000000',
+      show: false,
+      icon: ICON_PATH,
+      title: 'Paroles',
+      webPreferences: { preload: path.join(__dirname, 'lyrics-preload.js') },
+    });
+    lyricsWin.loadFile(path.join(__dirname, 'renderer', 'lyrics.html'));
+    lyricsWin.once('ready-to-show', () => lyricsWin?.showInactive());
+    lyricsWin.on('show', () => setTimeout(() => lyricsWin && !lyricsWin.isDestroyed() && lyricsWin.webContents.invalidate(), 50));
+    lyricsWin.on('closed', () => { lyricsWin = null; });
+    return;
+  }
+  lyricsWin.setBounds(lyricsBounds());
+  if (!lyricsWin.isVisible()) lyricsWin.showInactive();
+}
+
+function setLyricsOpen(flag) {
+  settings.lyricsOpen = flag;
+  saveSettings();
+  updateLyricsWindow();
+  updateTray();
+  send('lyrics-open', flag);
+  if (flag && lyricsClock?.file && lyricsData?.file !== lyricsClock.file) loadLyrics(lyricsClock.file);
+}
+
+function sendLyrics() {
+  if (lyricsWin && !lyricsWin.isDestroyed()) lyricsWin.webContents.send('lyrics-data', lyricsState());
+}
+
+const lyricsState = () => (lyricsData ? {
+  ...lyricsData,
+  syncMs: settings.fxSyncMs,
+  options: { roman: settings.lyricsRoman },
+} : null);
+
+// Paroles d'un morceau : affichées dès qu'elles sont trouvées, avec le décalage réglé pour ce morceau.
+async function loadLyrics(file, { refresh = false } = {}) {
+  lyrics ??= createLyrics({
+    dataDir: app.getPath('userData'),
+    fetch: net.fetch,
+    isOnline: () => net.isOnline(),
+    readTags: async (f) => {
+      mm ??= await import('music-metadata');
+      const { common, format } = await mm.parseFile(f, { duration: true });
+      return { ...common, duration: format.duration };
+    },
+  });
+  lyricsData = { file, status: 'loading' };
+  sendLyrics();
+  const job = lyrics.find(file, { refresh });
+  lyricsLoading = job;
+  const found = await job;
+  if (lyricsLoading !== job) return; // un autre morceau a été lancé entre-temps
+  lyricsData = { file, status: 'ready', ...found, offset: lyrics.offset(file) };
+  sendLyrics();
+}
+
+// Position du lecteur (renderer.js) : à chaque lecture, pause, saut, changement de morceau, et chaque seconde
+ipcMain.on('lyrics-clock', (_e, clock) => {
+  const changed = clock.file !== lyricsClock?.file;
+  lyricsClock = clock;
+  if (changed && settings.lyricsOpen) {
+    if (clock.file) loadLyrics(clock.file);
+    else {
+      lyricsData = { status: 'empty' };
+      sendLyrics();
+    }
+  }
+  if (lyricsWin && !lyricsWin.isDestroyed()) lyricsWin.webContents.send('lyrics-clock', { ...clock, syncMs: settings.fxSyncMs });
+});
+
+ipcMain.handle('lyrics-load', () => ({ lyrics: lyricsState(), clock: lyricsClock, transparent: settings.transparent }));
+ipcMain.on('toggle-lyrics', () => setLyricsOpen(!settings.lyricsOpen));
+ipcMain.on('lyrics-close', () => setLyricsOpen(false));
+ipcMain.on('lyrics-seek', (_e, time) => send('seek', time));
+ipcMain.on('lyrics-research', () => lyricsClock?.file && loadLyrics(lyricsClock.file, { refresh: true }));
+ipcMain.on('lyrics-option', (_e, name, value) => {
+  if (name === 'roman') settings.lyricsRoman = !!value;
+  saveSettings();
+});
+ipcMain.on('lyrics-offset', (_e, offset) => {
+  if (!lyricsData?.file) return;
+  lyricsData.offset = offset;
+  lyrics.setOffset(lyricsData.file, offset);
+});
 
 // ---------- Synchronisation avec le téléphone (sync.js) ----------
 

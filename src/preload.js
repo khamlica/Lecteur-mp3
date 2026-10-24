@@ -18,5 +18,7 @@ contextBridge.exposeInMainWorld('api', {
   frameFx: (fx) => ipcRenderer.send('frame-fx', fx),
   showSoundMenu: () => ipcRenderer.send('sound-menu'),
   reportPlayback: (info) => ipcRenderer.send('playback', info),
+  toggleLyrics: () => ipcRenderer.send('toggle-lyrics'),
+  lyricsClock: (clock) => ipcRenderer.send('lyrics-clock', clock),
   onCommand: (cb) => ipcRenderer.on('command', (_e, cmd, arg) => cb(cmd, arg)),
 });

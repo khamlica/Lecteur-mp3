@@ -1,6 +1,7 @@
 /* Le lecteur en plein écran, pour le téléphone (player.html) : la barre du bureau (style.css) dépliée en hauteur,
    grande pochette au milieu, commandes sous le pouce. Les effets (fx-themes.css) prennent tout l'écran : le fond
-   flou aux couleurs de la pochette, la basse qui monte du bas, le reflet qui fait le tour du bord. */
+   flou aux couleurs de la pochette, le bas du verre qui s'illumine avec la basse, le reflet qui fait le tour du
+   bord. */
 
 :root {
   --inset-top: 0px;
@@ -189,6 +190,8 @@ body {
 #transport .btn.play {
   width: 76px;
   height: 76px;
+  /* plein : les lumières (alvéoles du thème SAVAGE) ne transparaissent pas au travers */
+  background: rgb(245 245 247);
 }
 
 #transport .btn.play svg {
@@ -224,7 +227,7 @@ body {
 }
 
 .btn.play:hover {
-  background: rgba(255, 255, 255, 0.92);
+  background: rgb(245 245 247);
   color: #15161c;
 }
 
@@ -308,8 +311,8 @@ input[type="range"]:active::-webkit-slider-thumb {
                            sur les coups de basse ; un passage rêveur l'anime et le réchauffe ;
      la voix               la pochette s'éclaire par-derrière : une lueur faite de son image floutée (after.js) ;
      chaque coup           la pochette s'enfonce à peine, sa lueur avec elle ;
-     la basse tenue        (Verre liquide) une lumière de la couleur de la pochette monte du bas de l'écran, une
-                           crête claire en tête, comme un niveau ; (autres thèmes) le contour de l'écran ;
+     la basse tenue        (Verre liquide) le bas du verre s'illumine sur place, de la couleur de la pochette ;
+                           (autres thèmes) le contour de l'écran ;
      un moment fort        le bord de l'écran s'illumine aussi sur les coups de basse, et le reflet qui en fait le
                            tour s'élance ;
      un passage aigu       une lumière descend du haut, sous la barre des boutons.
@@ -430,25 +433,84 @@ input[type="range"]:active::-webkit-slider-thumb {
   display: none;
 }
 
-/* Basse tenue (Verre liquide) : une lumière monte du bas de l'écran, d'autant plus haut que la basse est lourde,
-   avec une crête claire en tête (on lit un niveau qui monte) ; dessinée une fois, seules sa position et son opacité
-   suivent la basse */
+/* Basse tenue (Verre liquide) : le bas du verre s'illumine sur place. Rien ne bouge (un niveau qui monte se lisait
+   comme un vumètre) : une nappe large et basse, de la couleur de la pochette (::before), suit la basse tenue, et un
+   cœur plus clair près du bas (::after) s'y ajoute quand elle est lourde, si bien que la lumière semble gonfler.
+   Ils suivent --fx-held, la basse tenue sans les coups du refrain (le bord de l'écran bat sur eux). Dessinés une
+   fois, seule leur opacité change ; .fx-bass lui-même reste à 1 (sinon le cœur hériterait de l'opacité de la nappe). */
 .fx-surface[data-fx-base="glass"] .fx-bass {
-  /* au-dessus du voile de lisibilité (qui l'éteindrait là où elle monte) : assez discrète pour le texte */
+  /* au-dessus du voile de lisibilité (qui l'éteindrait) : assez discrète pour le texte et les commandes */
   z-index: -1;
   top: auto;
-  height: 60%;
+  height: 62%;
   box-shadow: none;
   mix-blend-mode: normal;
-  background:
-    linear-gradient(90deg, transparent 6%, rgb(var(--fx-glint) / 0.6) 50%, transparent 94%) top / 100% 2px no-repeat,
-    radial-gradient(55% 100% at 50% 0%, rgb(var(--fx-glint) / 0.22), transparent) top / 100% 70px no-repeat,
-    /* une lumière : de la couleur de la pochette éclaircie, qui apparaît en fondu sous la crête (pas de bord) */
-    linear-gradient(180deg, transparent, rgb(var(--fx-glint) / 0.06) 90px, rgb(var(--fx-glint) / 0.12));
-  transform: translateY(calc((1 - var(--fx-pressure)) * 85%));
-  /* une pochette presque grise donnerait une lumière blanche qui délave tout : plus discrète */
-  opacity: min(1, calc(var(--fx-pressure) * 1.3 * var(--fx-cover-vivid)));
-  will-change: transform, opacity;
+  background: none;
+}
+
+.fx-surface[data-fx-base="glass"] .fx-bass::before,
+.fx-surface[data-fx-base="glass"] .fx-bass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  will-change: opacity;
+}
+
+/* bien visible dès une basse moyenne (courbe p·(2 − p)) ; une pochette presque grise donnerait une lumière blanche
+   qui délave tout : bien plus discrète (--fx-cover-vivid, au carré) */
+.fx-surface[data-fx-base="glass"] .fx-bass::before {
+  background: radial-gradient(130% 75% at 50% 100%, rgb(var(--fx-cover-color) / 0.46), rgb(var(--fx-cover-color) / 0.12) 55%, transparent);
+  opacity: min(1, calc(var(--fx-held) * (2 - var(--fx-held)) * var(--fx-cover-vivid) * var(--fx-cover-vivid)));
+}
+
+.fx-surface[data-fx-base="glass"] .fx-bass::after {
+  background: radial-gradient(80% 35% at 50% 100%, rgb(var(--fx-glint) / 0.3), transparent 70%);
+  opacity: calc(clamp(0, (var(--fx-held) - 0.45) * 1.8, 1) * var(--fx-cover-vivid) * var(--fx-cover-vivid));
+}
+
+/* SAVAGE : le Verre liquide, la basse tenue vue à travers des alvéoles. Les deux canevas (la nappe et le cœur,
+   dessinés par after.js à travers la texture choisie) remplacent la lueur continue, avec les mêmes courbes, et
+   dérivent très lentement, comme de l'écume sur l'eau (ils débordent de .fx-bass pour que le bord ne se voie pas) */
+.fx-cells-wide,
+.fx-cells-core {
+  display: none;
+}
+
+.fx-surface:is([data-fx-theme="savage-cells"], [data-fx-theme="savage-enhanced"]) .fx-bass::before,
+.fx-surface:is([data-fx-theme="savage-cells"], [data-fx-theme="savage-enhanced"]) .fx-bass::after {
+  display: none;
+}
+
+.fx-surface:is([data-fx-theme="savage-cells"], [data-fx-theme="savage-enhanced"]) :is(.fx-cells-wide, .fx-cells-core) {
+  display: block;
+  position: absolute;
+  left: -5%;
+  bottom: -2%;
+  width: 110%;
+  height: 104%;
+  transform-origin: 50% 100%;
+  animation: fx-cells-drift 38s ease-in-out infinite alternate;
+  will-change: opacity, transform;
+}
+
+.fx-surface:is([data-fx-theme="savage-cells"], [data-fx-theme="savage-enhanced"]) .fx-cells-wide {
+  opacity: min(1, calc(var(--fx-held) * (2 - var(--fx-held)) * var(--fx-cover-vivid) * var(--fx-cover-vivid)));
+}
+
+.fx-surface:is([data-fx-theme="savage-cells"], [data-fx-theme="savage-enhanced"]) .fx-cells-core {
+  opacity: calc(clamp(0, (var(--fx-held) - 0.45) * 1.8, 1) * var(--fx-cover-vivid) * var(--fx-cover-vivid));
+}
+
+/* les alvéoles sont plus contrastées que la lueur continue : une ombre douce garde les textes lisibles */
+.fx-surface:is([data-fx-theme="savage-cells"], [data-fx-theme="savage-enhanced"]) :is(#title, #artist, .time) {
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.7);
+}
+
+@keyframes fx-cells-drift {
+  0% { transform: translate(1.5%, 0.8%) scale(1.02); }
+  33% { transform: translate(-1.2%, -1%) scale(1.035); }
+  66% { transform: translate(-1.6%, 1.1%) scale(1.01); }
+  100% { transform: translate(1.3%, -0.6%) scale(1.03); }
 }
 
 /* Passage aigu : une lumière claire descend du haut, sous la barre des boutons (un liseré et sa lueur) */
@@ -544,24 +606,186 @@ input[type="range"]:active::-webkit-slider-thumb {
   will-change: opacity;
 }
 
-/* SAVAGE : le cadre de chrome est dessiné pour la barre du bureau (540 × 88) ; étiré sur l'écran entier il
-   serait déformé. Dans l'app, la base Verre liquide et son bord ; le cadre habille le widget (PlayerWidget). */
+/* Le cadre du bureau est dessiné pour sa barre (540 × 88) : étiré sur l'écran entier il serait déformé. Dans l'app,
+   les contours SAVAGE et SAVAGE ENHANCED prennent leur cadre du plein écran (plus bas). */
 .fx-surface:is([data-fx-frame="savage"], [data-fx-frame="savage-meshy"]):not(.preview) .fx-frame {
   display: none;
+}
+
+/* SAVAGE (le thème, ou le contour SAVAGE) : le cadre de chrome du bureau, refait pour le plein écran
+   (tools/savage/chrome_mobile.py). Le bord de l'écran est fait de pièces : les quatre coins et les quatre ornements
+   gardent leur taille, les tronçons droits du jonc (rails) s'étirent entre eux, pour toutes les tailles d'écran.
+   Le sertissage de la pochette la suit (posé par after.js) et s'enfonce avec elle sur les coups. Chacun a son reflet,
+   découpé à la forme du chrome : celui du verre (.fx-rim), qui tourne de la même façon et brille sur les coups de
+   basse. (SAVAGE ENHANCED garde le cadre du bureau pour le widget seulement.) */
+.fx-savage-frame,
+.fx-savage-cover {
+  display: none;
+}
+
+.fx-surface:is([data-fx-theme="savage-cells"][data-fx-frame="none"], [data-fx-frame="savage"]) :is(.fx-savage-frame, .fx-savage-cover) {
+  display: block;
+  position: absolute;
+  pointer-events: none;
+}
+
+/* le chrome remplace le liseré du verre */
+.fx-surface:is([data-fx-theme="savage-cells"][data-fx-frame="none"], [data-fx-frame="savage"]) .fx-rim {
+  display: none;
+}
+
+.fx-savage-frame {
+  inset: 0;
+  z-index: -1;
+  /* coins, ornements, puis les rails, en deux tronçons par côté (entre un coin et l'ornement, 1 px de recouvrement).
+     Sur un écran étroit (moins de 396 px), les ornements du haut et du bas se resserrent pour laisser les coins, et
+     il reste au moins 4 px de rail de chaque côté. (Positions à quatre valeurs : celles à trois, acceptées pour
+     background-position, invalident -webkit-mask-position et empilent tous les masques dans le coin.) */
+  --savage-pos: left top, right top, left bottom, right bottom, center top, center bottom, left center, right center,
+    left 77px top 0, right 77px top 0, left 77px bottom 0, right 77px bottom 0,
+    left 0 top 77px, left 0 bottom 77px, right 0 top 77px, right 0 bottom 77px;
+  --savage-size: 78px 78px, 78px 78px, 78px 78px, 78px 78px,
+    min(240px, calc(100% - 160px)) 26px, min(204px, calc(100% - 160px)) 23px, 22px 176px, 22px 176px,
+    max(4px, calc(50% - 196px)) 14px, max(4px, calc(50% - 196px)) 14px,
+    max(4px, calc(50% - 178px)) 14px, max(4px, calc(50% - 178px)) 14px,
+    14px calc(50% - 164px), 14px calc(50% - 164px), 14px calc(50% - 164px), 14px calc(50% - 164px);
+  background-image: url('skins/savage-mobile-tl.png'), url('skins/savage-mobile-tr.png'),
+    url('skins/savage-mobile-bl.png'), url('skins/savage-mobile-br.png'),
+    url('skins/savage-mobile-top.png'), url('skins/savage-mobile-bottom.png'),
+    url('skins/savage-mobile-left.png'), url('skins/savage-mobile-right.png'),
+    url('skins/savage-mobile-rail-top.png'), url('skins/savage-mobile-rail-top.png'),
+    url('skins/savage-mobile-rail-bottom.png'), url('skins/savage-mobile-rail-bottom.png'),
+    url('skins/savage-mobile-rail-left.png'), url('skins/savage-mobile-rail-left.png'),
+    url('skins/savage-mobile-rail-right.png'), url('skins/savage-mobile-rail-right.png');
+  background-position: var(--savage-pos);
+  background-size: var(--savage-size);
+  background-repeat: no-repeat;
+}
+
+.fx-savage-frame .fx-savage-glint {
+  -webkit-mask-image: url('skins/savage-mobile-tl-mask.png'), url('skins/savage-mobile-tr-mask.png'),
+    url('skins/savage-mobile-bl-mask.png'), url('skins/savage-mobile-br-mask.png'),
+    url('skins/savage-mobile-top-mask.png'), url('skins/savage-mobile-bottom-mask.png'),
+    url('skins/savage-mobile-left-mask.png'), url('skins/savage-mobile-right-mask.png'),
+    url('skins/savage-mobile-rail-top-mask.png'), url('skins/savage-mobile-rail-top-mask.png'),
+    url('skins/savage-mobile-rail-bottom-mask.png'), url('skins/savage-mobile-rail-bottom-mask.png'),
+    url('skins/savage-mobile-rail-left-mask.png'), url('skins/savage-mobile-rail-left-mask.png'),
+    url('skins/savage-mobile-rail-right-mask.png'), url('skins/savage-mobile-rail-right-mask.png');
+  -webkit-mask-position: var(--savage-pos);
+  -webkit-mask-size: var(--savage-size);
+  -webkit-mask-repeat: no-repeat;
+}
+
+/* au-dessus de la pochette : son ombre ne tombe pas sur le jonc, et celle du jonc tombe sur elle */
+.fx-savage-cover {
+  z-index: 1;
+  background: url('skins/savage-mobile-cover.png') 0 0 / 100% 100% no-repeat;
+  transform: scale(calc(1 - var(--fx-press) * 0.035));
+  will-change: transform;
+}
+
+.fx-savage-cover .fx-savage-glint {
+  -webkit-mask: url('skins/savage-mobile-cover-mask.png') 0 0 / 100% 100% no-repeat;
+}
+
+.fx-savage-glint {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* le reflet : le même dégradé conique que celui du verre, tourné par la carte graphique */
+.fx-savage-glint i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150vmax;
+  height: 150vmax;
+  margin: -75vmax 0 0 -75vmax;
+  background: conic-gradient(rgb(255 255 255 / 0.9) 0deg, rgb(var(--fx-glint) / 0.35) 24deg, transparent 60deg,
+    transparent 300deg, rgb(var(--fx-glint) / 0.35) 336deg, rgb(255 255 255 / 0.9) 360deg);
+  transform: rotate(var(--fx-rim-angle));
+  opacity: calc(0.12 + 0.88 * var(--fx-rim));
+  will-change: transform, opacity;
+}
+
+/* (autour de la pochette : juste de quoi couvrir son sertissage une fois tourné, pas tout l'écran) */
+.fx-savage-cover .fx-savage-glint i {
+  width: 142%;
+  height: 142%;
+  margin: -71% 0 0 -71%;
+}
+
+/* SAVAGE ENHANCED (le thème, ou le contour du même nom) : le cadre 3D du bureau, refait pour le plein écran dans
+   Blender (tools/savage-meshy/adapt_mobile.py, puis cut_mobile.py). Les groupes d'épines gardent leur taille : les
+   coins, les ornements du haut et du bas, le milieu des côtés ; les tronçons du jonc entre eux s'étirent (les côtés
+   d'un bloc, pour que leurs deux bouts raccordent ; 1 px sous chaque voisin, sans joint). Sur un écran étroit, les ornements du haut et du bas se
+   resserrent. Pas de sertissage : la pochette reste nue dans ce cadre déjà chargé. */
+.fx-surface:is([data-fx-theme="savage-enhanced"][data-fx-frame="none"], [data-fx-frame="savage-meshy"]) .fx-savage-frame {
+  display: block;
+  position: absolute;
+  pointer-events: none;
+  --savage-pos: left top, right top, left bottom, right bottom, center top, center bottom, left center, right center,
+    left 85px top 0, right 85px top 0, left 85px bottom 0, right 85px bottom 0,
+    left 0 top 51px, left 0 bottom 59px, right 0 top 51px, right 0 bottom 59px;
+  --savage-size: 86px 52px, 86px 52px, 86px 60px, 86px 60px,
+    min(240px, calc(100% - 172px)) 52px, min(240px, calc(100% - 172px)) 60px, 48px 74px, 48px 74px,
+    max(1px, calc(50% - 204px)) 52px, max(1px, calc(50% - 204px)) 52px,
+    max(1px, calc(50% - 204px)) 60px, max(1px, calc(50% - 204px)) 60px,
+    48px calc(50% - 87px), 48px calc(50% - 95px), 48px calc(50% - 87px), 48px calc(50% - 95px);
+  background-image: url('skins/savage-enhanced-tl.png'), url('skins/savage-enhanced-tr.png'),
+    url('skins/savage-enhanced-bl.png'), url('skins/savage-enhanced-br.png'),
+    url('skins/savage-enhanced-top.png'), url('skins/savage-enhanced-bottom.png'),
+    url('skins/savage-enhanced-left.png'), url('skins/savage-enhanced-right.png'),
+    url('skins/savage-enhanced-rail-top.png'), url('skins/savage-enhanced-rail-top.png'),
+    url('skins/savage-enhanced-rail-bottom.png'), url('skins/savage-enhanced-rail-bottom.png'),
+    url('skins/savage-enhanced-rail-left-top.png'), url('skins/savage-enhanced-rail-left-bottom.png'),
+    url('skins/savage-enhanced-rail-right-top.png'), url('skins/savage-enhanced-rail-right-bottom.png');
+}
+
+.fx-surface:is([data-fx-theme="savage-enhanced"][data-fx-frame="none"], [data-fx-frame="savage-meshy"]) .fx-savage-frame .fx-savage-glint {
+  -webkit-mask-image: url('skins/savage-enhanced-tl-mask.png'), url('skins/savage-enhanced-tr-mask.png'),
+    url('skins/savage-enhanced-bl-mask.png'), url('skins/savage-enhanced-br-mask.png'),
+    url('skins/savage-enhanced-top-mask.png'), url('skins/savage-enhanced-bottom-mask.png'),
+    url('skins/savage-enhanced-left-mask.png'), url('skins/savage-enhanced-right-mask.png'),
+    url('skins/savage-enhanced-rail-top-mask.png'), url('skins/savage-enhanced-rail-top-mask.png'),
+    url('skins/savage-enhanced-rail-bottom-mask.png'), url('skins/savage-enhanced-rail-bottom-mask.png'),
+    url('skins/savage-enhanced-rail-left-top-mask.png'), url('skins/savage-enhanced-rail-left-bottom-mask.png'),
+    url('skins/savage-enhanced-rail-right-top-mask.png'), url('skins/savage-enhanced-rail-right-bottom-mask.png');
+}
+
+.fx-surface:is([data-fx-theme="savage-enhanced"][data-fx-frame="none"], [data-fx-frame="savage-meshy"]) .fx-rim {
+  display: none;
+}
+
+/* le jonc est à 36 px des bords et ses épines en dépassent vers l'intérieur : le contenu se resserre d'autant, la
+   pochette avec lui */
+#bar.fx-surface:is([data-fx-theme="savage-enhanced"][data-fx-frame="none"], [data-fx-frame="savage-meshy"]) {
+  padding-left: calc(var(--inset-left) + 46px);
+  padding-right: calc(var(--inset-right) + 46px);
+  padding-bottom: calc(var(--inset-bottom) + 40px);
+}
+
+.fx-surface:is([data-fx-theme="savage-enhanced"][data-fx-frame="none"], [data-fx-frame="savage-meshy"]) #cover {
+  width: min(100vw - 100px, 46vh, 440px);
 }
 
 /* Mouvements réduits (réglage d'Android) : rien ne bouge ni ne bat, le bord ne s'illumine qu'à peine ; les
    lumières suivent toujours la musique */
 @media (prefers-reduced-motion: reduce) {
   .fx-palette,
-  .fx-surface[data-fx-base="glass"] .fx-bass,
   .fx-cover-glow,
   .fx-surface:not([data-fx-base="glass"]) .fx-cover-glow,
   .fx-surface[data-fx-base="glass"] .fx-cover {
     transform: none;
   }
 
-  .fx-surface.fx-palette-on .fx-palette-img {
+  .fx-savage-cover {
+    transform: none;
+  }
+
+  .fx-surface.fx-palette-on .fx-palette-img,
+  .fx-surface:is([data-fx-theme="savage-cells"], [data-fx-theme="savage-enhanced"]) :is(.fx-cells-wide, .fx-cells-core) {
     animation: none;
   }
 

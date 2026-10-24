@@ -1,4 +1,4 @@
-// Les fenêtres du bureau (menu.html, fx-panel.html, editor.html) ouvertes dans un panneau du lecteur (host.js) : leur
+// Les fenêtres du bureau (menu.html, fx-panel.html, editor.html, lyrics.html…) ouvertes dans un panneau du lecteur (host.js) : leur
 // pont vers le lecteur, à la place des preload d'Electron. Ajouté à ces pages par la build (build.gradle.kts).
 (() => {
   const host = parent.hanabiHost;
@@ -8,6 +8,7 @@
   else if (page === 'fx-panel.html') window.fxPanel = host.fxPanelApi(window);
   else if (page === 'editor.html') window.editor = host.editorApi(window);
   else if (page === 'sync.html') window.sync = host.syncApi(window);
+  else if (page === 'lyrics.html') window.lyricsApi = host.lyricsApi(window);
   // pas de souris ni de glisser-déposer : on touche la pochette pour choisir une image
   if (page === 'editor.html') {
     addEventListener('DOMContentLoaded', () => {

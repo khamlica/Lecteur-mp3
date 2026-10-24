@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' file:">
+  <title>Paroles</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="lyrics.css">
+</head>
+<body>
+  <svg class="sprite" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M7 12h10"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M7 12h10M12 7v10"/></symbol>
+  </svg>
+
+  <div id="panel">
+    <div id="lines"></div>
+    <div id="message"></div>
+
+    <div id="toolbar">
+      <span id="status"></span>
+      <button class="chip" id="roman" title="Afficher la prononciation en lettres latines sous les paroles en coréen et en japonais">가→ga</button>
+      <span class="offset" title="Paroles en avance ou en retard sur le son">
+        <button class="btn tiny" id="earlier" title="Paroles plus tôt (−0,1 s)"><svg><use href="#i-minus"/></svg></button>
+        <span id="offset-value">0,0 s</span>
+        <button class="btn tiny" id="later" title="Paroles plus tard (+0,1 s)"><svg><use href="#i-plus"/></svg></button>
+      </span>
+      <button class="btn tiny" id="close" title="Fermer les paroles"><svg><use href="#i-close"/></svg></button>
+    </div>
+  </div>
+
+  <script src="kuromoji-core.js"></script>
+  <script src="romanize.js"></script>
+  <script src="lyrics.js"></script>
+</body>
+</html>

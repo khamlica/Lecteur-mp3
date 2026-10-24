@@ -187,7 +187,9 @@ function createSound(audio) {
   // qu'une fois un effet (sonore ou d'ambiance) réellement utilisé.
   function ensure() {
     if (ctx) return;
-    ctx = new AudioContext();
+    // Le téléphone demande une sortie à gros tampons (api.audioLatency, android/host.js) : écran éteint,
+    // la sortie à faible latence craque dès que le calcul de l'effet prend un peu de retard.
+    ctx = new AudioContext(api.audioLatency ? { latencyHint: api.audioLatency } : {});
     input = ctx.createMediaElementSource(audio);
     output = ctx.createGain();
     output.connect(ctx.destination);

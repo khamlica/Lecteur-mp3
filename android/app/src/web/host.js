@@ -26,6 +26,7 @@
     fxSyncByDevice: {},
     fxTheme: 'glass',
     fxFrame: 'none',
+    fxTexture: 'cells',      // thème SAVAGE : la texture de la lueur de basse (FX_TEXTURES)
     fxColorMode: 'theme',
     fxCustomColor: '#ff7a3d',
     soundFx: 'none',
@@ -80,7 +81,10 @@
   // ---------- Effets d'ambiance (comme dans main.js) ----------
 
   // Mêmes noms que FX_THEMES et FX_FRAMES dans effects.js
-  const FX_THEMES = [['glass', 'Verre liquide'], ['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
+  const FX_THEMES = [['glass', 'Verre liquide'], ['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome'],
+    ['savage-cells', 'SAVAGE'], ['savage-enhanced', 'SAVAGE ENHANCED']];
+  // Thème SAVAGE : les alvéoles à travers lesquelles on voit la lueur de la basse (after.js)
+  const FX_TEXTURES = [['cells', 'Alvéoles'], ['hex', "Nid d'abeille"], ['graded', 'Écume graduée'], ['plateau', 'Écume épaisse']];
   const FX_FRAMES = [['none', 'Aucun'], ['savage', 'SAVAGE'], ['savage-meshy', 'SAVAGE ENHANCED']];
 
   const FX_SETTINGS = {
@@ -95,9 +99,11 @@
     fxHaloLevel: (v) => typeof v === 'number' && v >= 0 && v <= 1.5,
     fxTheme: (v) => FX_THEMES.some(([name]) => name === v),
     fxFrame: (v) => FX_FRAMES.some(([name]) => name === v),
+    fxTexture: (v) => FX_TEXTURES.some(([name]) => name === v),
     fxColorMode: (v) => ['theme', 'cover', 'custom'].includes(v),
     fxCustomColor: (v) => /^#[0-9a-f]{6}$/i.test(v),
   };
+  if (!FX_SETTINGS.fxTexture(settings.fxTexture)) settings.fxTexture = DEFAULTS.fxTexture;
 
   function fxConfig() {
     return {
@@ -185,6 +191,12 @@
         checked: settings.fxTheme === value,
         click: () => setEffects({ fxTheme: value }),
       })),
+      ...(settings.fxTheme.startsWith('savage-') ? [{ label: 'Texture SAVAGE', submenu: FX_TEXTURES.map(([value, label]) => ({
+        label,
+        type: 'radio',
+        checked: settings.fxTexture === value,
+        click: () => setEffects({ fxTexture: value }),
+      })) }] : []),
       // le contour se pose par-dessus le thème choisi (dans l'app, il habille le widget, voir mobile.css)
       { label: 'Contour', submenu: FX_FRAMES.map(([value, label]) => ({
         label,
@@ -491,9 +503,115 @@
   $b('browser-pick').addEventListener('click', () => browser.path && closeBrowser({ folder: browser.path, file: null }));
   $b('browser-allow').addEventListener('click', () => N.requestStorageAccess());
 
+  // ---------- Paroles (comme dans main.js) ----------
+
+  // lyrics.html s'ouvre en plein écran ; les paroles viennent de LRCLIB (lyrics-search.js), gardées dans le stockage
+  // de la page, avec le décalage réglé pour chaque morceau (réglage lyricsOffsets).
+  let lyricsPanel = null, lyricsData = null, lyricsClock = null, lyricsJob = null;
+  const lyricsListeners = new Map(); // fenêtre → { data, clock }
+  const lyricsKey = (file) => `lyrics:${file}`;
+
+  const lyricsState = () => (lyricsData ? { ...lyricsData, syncMs: settings.fxSyncMs, options: { roman: settings.lyricsRoman !== false } } : null);
+
+  function sendLyrics() {
+    for (const [win, cb] of lyricsListeners) {
+      if (win.closed) lyricsListeners.delete(win);
+      else cb.data?.(lyricsState());
+    }
+  }
+
+  async function findLyrics(file, refresh) {
+    try {
+      const cached = !refresh && JSON.parse(localStorage.getItem(lyricsKey(file)) || 'null');
+      if (cached && !LyricsSearch.isStale(cached)) return cached;
+    } catch { /* stockage indisponible : on cherche */ }
+    if (!navigator.onLine) return { missing: true, reason: 'offline' };
+    // la durée (pour reconnaître la bonne version) arrive avec les métadonnées du morceau : on l'attend un peu
+    for (let i = 0; i < 20 && lyricsClock?.file === file && !lyricsClock.duration; i++) await new Promise((r) => setTimeout(r, 100));
+    try {
+      const tags = await call('metadata', file).catch(() => ({}));
+      const name = basename(file).replace(/\.[^.]+$/, '');
+      const found = await LyricsSearch.searchLrclib(fetch, { ...tags, duration: lyricsClock?.duration, name })
+        || LyricsSearch.notFound();
+      try {
+        localStorage.setItem(lyricsKey(file), JSON.stringify(found));
+      } catch { /* pas de place : on cherchera de nouveau la prochaine fois */ }
+      return found;
+    } catch (err) {
+      console.warn('Recherche des paroles impossible :', err.message);
+      return { missing: true, reason: 'error' };
+    }
+  }
+
+  async function loadLyrics(file, refresh = false) {
+    lyricsData = { file, status: 'loading' };
+    sendLyrics();
+    const job = findLyrics(file, refresh);
+    lyricsJob = job;
+    const found = await job;
+    if (lyricsJob !== job) return;
+    lyricsData = { file, status: 'ready', ...found, offset: settings.lyricsOffsets?.[file] || 0 };
+    sendLyrics();
+  }
+
+  // Le panneau des paroles prend la place de la pochette et du titre, entre les boutons du haut et la barre de temps :
+  // la barre, la lecture et le volume restent sous le doigt (android/lyrics-mobile.css).
+  // En largeur, il suit la barre de temps : un contour qui élargit les marges du lecteur (SAVAGE ENHANCED) reste visible.
+  function placeLyrics() {
+    if (!lyricsPanel) return;
+    const seek = document.querySelector('.row.seek').getBoundingClientRect();
+    const style = lyricsPanel.el.style;
+    style.setProperty('--lyrics-top', `${Math.round(document.getElementById('window-btns').getBoundingClientRect().bottom + 4)}px`);
+    style.setProperty('--lyrics-bottom', `${Math.round(innerHeight - seek.top + 4)}px`);
+    style.setProperty('--lyrics-left', `${Math.round(Math.max(8, seek.left - 8))}px`);
+    style.setProperty('--lyrics-right', `${Math.round(Math.max(8, innerWidth - seek.right - 8))}px`);
+  }
+  addEventListener('resize', placeLyrics);
+  // un changement de thème ou de contour (attributs de #bar, voir effects.js) déplace la barre de temps ; pas l'attribut
+  // style, réécrit à chaque image par les effets (une mesure par image ferait saccader)
+  new MutationObserver(() => requestAnimationFrame(placeLyrics))
+    .observe(document.getElementById('bar'), { attributeFilter: ['data-fx-theme', 'data-fx-frame', 'class'] });
+
+  function setLyricsOpen(flag) {
+    if (flag && !lyricsPanel) {
+      lyricsPanel = openLayer('lyrics', 'lyrics.html', () => {
+        lyricsPanel = null;
+        document.body.classList.remove('lyrics-open');
+        send('lyrics-open', false);
+      });
+      document.body.classList.add('lyrics-open');
+      placeLyrics();
+      if (lyricsClock?.file && lyricsData?.file !== lyricsClock.file) loadLyrics(lyricsClock.file);
+    } else if (!flag && lyricsPanel) closeLayer(lyricsPanel);
+    send('lyrics-open', flag);
+  }
+
+  const lyricsApi = (win) => ({
+    load: () => Promise.resolve({ lyrics: lyricsState(), clock: lyricsClock, transparent: settings.transparent }),
+    onLyrics: (cb) => lyricsListeners.set(win, { ...lyricsListeners.get(win), data: cb }),
+    onClock: (cb) => lyricsListeners.set(win, { ...lyricsListeners.get(win), clock: cb }),
+    onTransparent: () => {},
+    seek: (time) => send('seek', time),
+    setOption: (name, value) => {
+      if (name === 'roman') settings.lyricsRoman = !!value;
+      saveSettings();
+    },
+    setOffset: (offset) => {
+      if (!lyricsData?.file) return;
+      lyricsData.offset = offset;
+      settings.lyricsOffsets = { ...settings.lyricsOffsets, [lyricsData.file]: offset || undefined };
+      saveSettings();
+    },
+    research: () => lyricsClock?.file && loadLyrics(lyricsClock.file, true),
+    close: () => setLyricsOpen(false),
+  });
+
   // ---------- window.api (preload.js du bureau) ----------
 
   window.api = {
+    // Effets sonores (sound.js) : sortie à gros tampons, qui tient écran éteint ; les effets visuels
+    // compensent la latence d'eux-mêmes
+    audioLatency: 'playback',
     getInitialState: async () => {
       let tracks = [];
       if (settings.folder && N.hasStorageAccess()) tracks = await call('scan', settings.folder).catch(() => []);
@@ -566,6 +684,19 @@
       if (info.fxColor) sendFxPanel();
       host.reportPlayback?.();
     },
+    toggleLyrics: () => setLyricsOpen(!lyricsPanel),
+    lyricsClock: (clock) => {
+      const changed = clock.file !== lyricsClock?.file;
+      lyricsClock = clock;
+      if (changed && lyricsPanel) {
+        if (clock.file) loadLyrics(clock.file);
+        else {
+          lyricsData = { status: 'empty' };
+          sendLyrics();
+        }
+      }
+      for (const [win, cb] of lyricsListeners) if (!win.closed) cb.clock?.({ ...clock, syncMs: settings.fxSyncMs });
+    },
     onCommand: (cb) => { commandCb = cb; },
   };
 
@@ -579,6 +710,7 @@
     fxPanelApi,
     editorApi,
     syncApi,
+    lyricsApi,
     reportPlayback: null, // posé par after.js
     onCommand: null,      // commandes propres au téléphone, posé par after.js
     onStorage: null,

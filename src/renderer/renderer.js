@@ -88,6 +88,7 @@ async function loadTrack(newPos, { autoplay = false, startAt = 0 } = {}) {
   if (autoplay) audio.play().catch(() => {});
 
   showInfo(track, {});
+  reportLyricsClock();
   api.saveState({ lastTrack: track.path, position: startAt });
 
   const meta = await api.getMetadata(track.path);
@@ -126,6 +127,29 @@ function showEmpty() {
   ui.timeDur.textContent = '0:00';
   setRange(ui.progress, 0);
   api.reportPlayback({ title: '', playing: false });
+  reportLyricsClock();
+}
+
+// ---------- Paroles ----------
+
+// La fenêtre des paroles (lyrics.js) suit la position de lecture : envoyée à chaque lecture, pause, saut ou
+// changement de morceau, puis chaque seconde ; entre deux, elle avance avec l'horloge.
+let lastLyricsClock = 0;
+function reportLyricsClock() {
+  lastLyricsClock = Date.now();
+  api.lyricsClock?.({
+    file: current()?.path || null,
+    time: audio.currentTime || 0,
+    playing: !audio.paused,
+    rate: audio.playbackRate,
+    duration: isFinite(audio.duration) ? audio.duration : null,
+    at: Date.now(),
+  });
+}
+
+function seekTo(time) {
+  if (!isFinite(audio.duration)) return;
+  audio.currentTime = Math.max(0, Math.min(audio.duration, time));
 }
 
 // ---------- Commandes ----------
@@ -410,15 +434,21 @@ function renderPlayState() {
 
 // ---------- Événements audio ----------
 
-audio.addEventListener('play', renderPlayState);
+audio.addEventListener('play', () => {
+  renderPlayState();
+  reportLyricsClock();
+});
 audio.addEventListener('pause', () => {
   renderPlayState();
   savePosition();
+  reportLyricsClock();
 });
+for (const event of ['playing', 'seeked', 'ratechange', 'loadedmetadata']) audio.addEventListener(event, reportLyricsClock);
 audio.addEventListener('playing', () => { errorStreak = 0; });
 audio.addEventListener('loadedmetadata', renderProgress);
 audio.addEventListener('timeupdate', () => {
   renderProgress();
+  if (Date.now() - lastLyricsClock > 1000) reportLyricsClock();
   const now = Date.now();
   if (now - lastPositionSave > 5000) {
     lastPositionSave = now;
@@ -454,6 +484,7 @@ $('youtube').addEventListener('click', () => {
   else openYoutube();
 });
 $('close').addEventListener('click', () => api.hideWindow());
+$('lyrics')?.addEventListener('click', () => api.toggleLyrics());
 ui.mute.addEventListener('click', toggleMute);
 
 // Titre ou artiste trop long : fondu sur le bord et défilement au survol (style.css, classe long), sur la
@@ -567,6 +598,8 @@ api.onCommand((cmd, arg) => {
     case 'sound': setSoundEffect(arg); break;
     case 'flush': savePosition(); break;
     case 'library-changed': refreshTracks(arg); break;
+    case 'seek': seekTo(arg); break;
+    case 'lyrics-open': $('lyrics')?.classList.toggle('active', !!arg); break;
   }
 });
 
@@ -584,6 +617,7 @@ navigator.mediaDevices.addEventListener('devicechange', reportAudioDevice);
   const { settings, tracks: list, sound: soundEffect, effects } = await api.getInitialState();
   folder = settings.folder;
   document.body.classList.toggle('opaque', settings.transparent === false);
+  $('lyrics')?.classList.toggle('active', !!settings.lyricsOpen);
   shuffle = settings.shuffle;
   repeat = settings.repeat;
   audio.volume = settings.volume;

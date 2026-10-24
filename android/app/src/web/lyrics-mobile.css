@@ -1,0 +1,25 @@
+/* Panneau des paroles sur le téléphone (voir placeLyrics dans host.js) : entre les boutons du haut et la barre de
+   temps, sans voile sur le reste de l'écran, qui reste utilisable (barre de temps, lecture, volume). Le verre flouté
+   de la feuille laisse voir les lumières des effets d'ambiance derrière les paroles. */
+.lyrics-layer {
+  pointer-events: none;
+}
+
+.lyrics-layer .backdrop {
+  display: none;
+}
+
+.lyrics-layer .sheet {
+  pointer-events: auto;
+  top: var(--lyrics-top, calc(var(--inset-top) + 8px));
+  bottom: var(--lyrics-bottom, 40%);
+  left: var(--lyrics-left, 8px);
+  right: var(--lyrics-right, 8px);
+  background: rgb(16 18 28 / 0.4);
+}
+
+/* le titre et l'artiste, sous le bas du panneau, se liraient en travers des paroles (la WebView ne floute pas
+   toujours ce qui est derrière la feuille) : masqués le temps des paroles, que la barre d'outils nomme déjà */
+body.lyrics-open #info {
+  visibility: hidden;
+}

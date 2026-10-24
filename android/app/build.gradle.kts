@@ -66,6 +66,10 @@ dependencies {
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     implementation("androidx.activity:activity:1.13.0")
     implementation("androidx.core:core:1.18.0")
+    // scanner de QR code de Google Play : sans autorisation d'appareil photo ni écran à faire (synchronisation sans Wi‑Fi)
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // le scanner tire une vieille version de fragment, qui casserait registerForActivityResult (MainActivity)
+    implementation("androidx.fragment:fragment:1.8.9")
 }
 
 // ---------- Interface : celle de l'app de bureau (src/renderer), adaptée au téléphone ----------
@@ -92,7 +96,7 @@ abstract class CopyWebTask : DefaultTask() {
         mobile.get().asFile.copyRecursively(dest.resolve("android"))
         // la page du lecteur à côté de celle du bureau (index.html) : mêmes adresses relatives (Worker des effets…)
         dest.resolve("android/player.html").renameTo(dest.resolve("player.html"))
-        for (page in listOf("menu.html", "fx-panel.html", "editor.html")) {
+        for (page in listOf("menu.html", "fx-panel.html", "editor.html", "sync.html")) {
             val file = dest.resolve(page)
             val html = file.readText()
             require("</title>" in html && "</head>" in html) { "$page : balises </title> et </head> introuvables" }

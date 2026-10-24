@@ -184,6 +184,8 @@
       { type: 'separator' },
       { label: 'Transparence', type: 'checkbox', checked: settings.transparent, click: (item) => setTransparent(item.checked) },
       { label: 'Personnaliser les effets…', click: openFxPanel },
+      { type: 'separator' },
+      { label: 'Synchroniser avec l\'ordinateur…', click: openSync },
     ];
   }
 
@@ -330,6 +332,29 @@
     close: () => closeLayer(layerOf(win)),
     onReload: (cb) => { editorReload = cb; },
   });
+
+  // Fenêtre « Synchronisation » (sync.html) : l'état vient de Sync.kt
+  let syncPanel = null;
+  const syncListeners = new Map(); // fenêtre → rappel
+
+  function openSync() {
+    if (syncPanel) return;
+    syncPanel = openLayer('panel', 'sync.html', () => { syncPanel = null; });
+  }
+
+  const syncApi = (win) => ({
+    load: () => call('sync', 'state'),
+    action: (name, arg) => call('sync', name, arg ?? null),
+    close: () => closeLayer(layerOf(win)),
+    onUpdate: (cb) => syncListeners.set(win, cb),
+  });
+
+  function syncState(state) {
+    for (const [win, cb] of syncListeners) {
+      if (win.closed) syncListeners.delete(win);
+      else cb(state);
+    }
+  }
 
   // ---------- Dossier ou piste ----------
 
@@ -503,6 +528,7 @@
     menuApi,
     fxPanelApi,
     editorApi,
+    syncApi,
     reportPlayback: null, // posé par after.js
     onCommand: null,      // commandes propres au téléphone, posé par after.js
     onStorage: null,
@@ -536,6 +562,15 @@
           }
           break;
         case 'update-ready': updateReady = arg; break;
+        case 'sync-state': syncState(arg); break;
+        case 'library-changed':
+          // morceaux reçus de l'ordinateur ; le dossier (Musique/YouTube) vient peut-être d'être créé pour eux
+          if (!settings.folder) {
+            settings.folder = arg.folder;
+            saveSettings();
+          }
+          send('library-changed', arg);
+          break;
         case 'resume':
         case 'storage':
           // de retour des réglages d'Android : l'accès aux fichiers vient peut-être d'être accordé

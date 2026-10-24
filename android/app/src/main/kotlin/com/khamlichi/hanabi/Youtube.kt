@@ -49,8 +49,9 @@ object Youtube {
         return line.replace(Regex("^ERROR:\\s*(\\[[^\\]]+\\]\\s*[\\w-]+:\\s*)?"), "")
     }
 
-    // Dossier de destination : le dossier de musique, ou Musique/YouTube s'il n'y en a pas encore.
-    private fun downloadFolder(folder: String?): String {
+    // Dossier de destination : le dossier de musique, ou Musique/YouTube s'il n'y en a pas encore (aussi celui des
+    // morceaux reçus par la synchronisation).
+    fun downloadFolder(folder: String?): String {
         if (folder != null && File(folder).isDirectory) return folder
         val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "YouTube")
         dir.mkdirs()

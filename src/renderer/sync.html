@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>Synchronisation</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="editor.css">
+  <link rel="stylesheet" href="fx-panel.css">
+  <link rel="stylesheet" href="sync.css">
+</head>
+<body>
+  <svg class="sprite" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  </svg>
+
+  <div id="panel">
+    <header>
+      <span>Synchronisation</span>
+      <button class="btn small" id="close" title="Fermer (Échap)"><svg><use href="#i-close"/></svg></button>
+    </header>
+
+    <p class="intro" id="intro"></p>
+
+    <section>
+      <h2 id="devices-title"></h2>
+      <div id="devices"></div>
+    </section>
+
+    <section>
+      <h2>Associer</h2>
+      <div id="pair"></div>
+    </section>
+
+    <section>
+      <h2>Sans Wi‑Fi</h2>
+      <div id="offline"></div>
+    </section>
+
+    <footer>
+      <div id="status"></div>
+      <button class="action" id="sync-now" hidden>Synchroniser</button>
+    </footer>
+  </div>
+
+  <script src="sync.js"></script>
+</body>
+</html>

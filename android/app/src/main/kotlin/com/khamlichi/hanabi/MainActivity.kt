@@ -109,6 +109,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         service?.event("resume")
+        service?.syncSoon()
     }
 
     override fun onDestroy() {

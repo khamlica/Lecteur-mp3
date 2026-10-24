@@ -228,6 +228,21 @@ async function chooseFolder(kind, anchor) {
   else setTracks(result.tracks);
 }
 
+// Le dossier a changé sans qu'on le choisisse (morceaux reçus par la synchronisation) : la liste suit, sans couper le
+// morceau en cours
+function refreshTracks({ folder: dir, tracks: list }) {
+  if (folder && dir !== folder) return;
+  const playing = current();
+  if (!playing) {
+    folder = dir;
+    return setTracks(list);
+  }
+  tracks = list;
+  const idx = tracks.findIndex((t) => t.path === playing.path);
+  buildOrder(idx >= 0 ? idx : null);
+  document.body.classList.toggle('empty', tracks.length === 0);
+}
+
 function savePosition() {
   if (current()) api.saveState({ position: audio.currentTime || 0 });
 }
@@ -551,6 +566,7 @@ api.onCommand((cmd, arg) => {
     case 'transparent': document.body.classList.toggle('opaque', !arg); break;
     case 'sound': setSoundEffect(arg); break;
     case 'flush': savePosition(); break;
+    case 'library-changed': refreshTracks(arg); break;
   }
 });
 

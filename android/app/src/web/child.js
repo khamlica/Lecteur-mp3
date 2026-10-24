@@ -7,6 +7,7 @@
   if (page === 'menu.html') window.menu = host.menuApi(window);
   else if (page === 'fx-panel.html') window.fxPanel = host.fxPanelApi(window);
   else if (page === 'editor.html') window.editor = host.editorApi(window);
+  else if (page === 'sync.html') window.sync = host.syncApi(window);
   // pas de souris ni de glisser-déposer : on touche la pochette pour choisir une image
   if (page === 'editor.html') {
     addEventListener('DOMContentLoaded', () => {

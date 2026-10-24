@@ -1,0 +1,186 @@
+/* Fenêtre « Synchronisation » : même verre que les réglages des effets (fx-panel.css) */
+
+.intro {
+  margin: -4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+
+/* ---------- Appareils associés ---------- */
+
+#devices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.device {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.device .text {
+  flex: 1;
+  min-width: 0;
+}
+
+.device .name {
+  font-size: 12.5px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.device .detail {
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--fg-faint);
+}
+
+.device .link.confirm {
+  background: rgba(255, 140, 120, 0.22);
+  color: #ffd2c8;
+}
+
+.empty {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+}
+
+/* ---------- Association ---------- */
+
+#pair {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+
+#pair p {
+  margin: 0;
+}
+
+#pair .row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+#pair .message.error {
+  color: #ffb4a8;
+}
+
+/* le code à comparer entre les deux écrans */
+.code {
+  align-self: center;
+  padding: 6px 4px;
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+/* ordinateurs trouvés sur le réseau */
+.peer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.peer:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.peer .paired {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--fg-faint);
+}
+
+/* attente : trois points qui pulsent */
+.waiting::after {
+  content: '';
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  animation: dots 1.2s steps(4) infinite;
+}
+
+@keyframes dots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
+
+#status {
+  white-space: normal;
+}
+
+/* ---------- Sans Wi‑Fi ---------- */
+
+#offline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+
+#offline p {
+  margin: 0;
+}
+
+#offline .row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+#offline .message.error {
+  color: #ffb4a8;
+}
+
+/* le QR code, sur fond blanc : un appareil photo le lit mal sur le verre sombre */
+.qr {
+  align-self: center;
+  width: 220px;
+  height: 220px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #fff;
+}
+
+/* la fenêtre s'allonge avec le QR code : elle défile */
+html,
+body {
+  overflow-y: auto;
+}
+
+#panel {
+  height: auto;
+  min-height: 100%;
+}

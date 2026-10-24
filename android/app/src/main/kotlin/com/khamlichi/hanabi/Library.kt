@@ -95,9 +95,12 @@ object Library {
 
     fun coverBytes(path: String): ByteArray? = retriever(path) { it.embeddedPicture } ?: oggPicture(path)
 
-    // Pochette d'un fichier Opus ou Ogg (tag METADATA_BLOCK_PICTURE) : Android ne lit pas les grandes (la miniature
-    // d'une vidéo, posée par yt-dlp), réparties sur plusieurs pages Ogg
-    private fun oggPicture(path: String): ByteArray? {
+    private fun ByteBuffer.skipField() { val n = int; position(position() + n) }
+    private fun ByteBuffer.field(): ByteArray { val n = int; require(n in 0..remaining()); return ByteArray(n).also { get(it) } }
+
+    // Commentaires d'un fichier Opus ou Ogg (TITLE=…, PURL=…), le premier pour lequel `pick` rend autre chose que null.
+    // Android ne lit pas les grands (la miniature d'une vidéo, posée par yt-dlp), répartis sur plusieurs pages Ogg.
+    private fun <T> oggComment(path: String, pick: (String) -> T?): T? {
         if (!Regex("\\.(opus|ogg)$", RegexOption.IGNORE_CASE).containsMatchIn(path)) return null
         return try {
             java.io.RandomAccessFile(path, "r").use { f ->
@@ -117,20 +120,9 @@ object Library {
                 }
                 val tags = ByteBuffer.wrap(packets.getOrNull(1)?.toByteArray() ?: return null).order(ByteOrder.LITTLE_ENDIAN)
                 tags.position(if (tags.get(0) == 3.toByte()) 7 else 8) // « \u0003vorbis » ou « OpusTags »
-                fun ByteBuffer.skipField() { val n = int; position(position() + n) }
-                fun ByteBuffer.field(): ByteArray { val n = int; require(n in 0..remaining()); return ByteArray(n).also { get(it) } }
                 tags.skipField() // fournisseur
                 repeat(tags.int) {
-                    val bytes = tags.field()
-                    val comment = String(bytes, Charsets.UTF_8)
-                    if (comment.startsWith("METADATA_BLOCK_PICTURE=", ignoreCase = true)) {
-                        val block = ByteBuffer.wrap(Base64.decode(comment.substringAfter('='), Base64.DEFAULT))
-                        block.int // type
-                        block.skipField() // type MIME
-                        block.skipField() // description
-                        block.position(block.position() + 16) // largeur, hauteur, profondeur, palette
-                        return block.field()
-                    }
+                    pick(String(tags.field(), Charsets.UTF_8))?.let { return it }
                 }
                 null
             }
@@ -138,6 +130,36 @@ object Library {
             null
         }
     }
+
+    // Pochette d'un fichier Opus ou Ogg (tag METADATA_BLOCK_PICTURE)
+    private fun oggPicture(path: String): ByteArray? = oggComment(path) { comment ->
+        if (!comment.startsWith("METADATA_BLOCK_PICTURE=", ignoreCase = true)) return@oggComment null
+        val block = ByteBuffer.wrap(Base64.decode(comment.substringAfter('='), Base64.DEFAULT))
+        block.int // type
+        block.skipField() // type MIME
+        block.skipField() // description
+        block.position(block.position() + 16) // largeur, hauteur, profondeur, palette
+        block.field()
+    }
+
+    // Identifiant d'un morceau pour la synchronisation, le même que trackId dans src/sync.js : la vidéo YouTube
+    // d'origine si le fichier la mentionne (yt-dlp l'écrit dans les commentaires des .opus), sinon le nom du fichier
+    private val youtubeId = Regex("(?:[?&]v=|youtu\\.be/|/shorts/)([\\w-]{11})")
+    private class CachedId(val size: Long, val modified: Long, val id: String)
+    private val ids = java.util.concurrent.ConcurrentHashMap<String, CachedId>()
+
+    fun trackId(file: File): String {
+        val cached = ids[file.path]
+        if (cached != null && cached.size == file.length() && cached.modified == file.lastModified()) return cached.id
+        val id = oggComment(file.path) { comment ->
+            val key = comment.substringBefore('=').lowercase(Locale.ROOT)
+            if (key == "purl" || key == "comment") youtubeId.find(comment.substringAfter('='))?.let { "yt:${it.groupValues[1]}" } else null
+        } ?: nameId(file.name)
+        ids[file.path] = CachedId(file.length(), file.lastModified(), id)
+        return id
+    }
+
+    fun nameId(name: String) = "name:" + java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFC).lowercase(Locale.ROOT)
 
     fun imageType(data: ByteArray) = if (data.size > 4 && data[0] == 0x89.toByte() && data[1] == 'P'.code.toByte()) "image/png" else "image/jpeg"
 

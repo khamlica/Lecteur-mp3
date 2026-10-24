@@ -22,6 +22,8 @@ import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
 import android.os.Binder
 import android.os.Build
@@ -43,6 +45,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -61,6 +66,7 @@ class PlayerService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val WIDGET_TICK = 2000L
         private const val PAUSED_FOREGROUND = 10 * 60 * 1000L // en pause, le lecteur quitte le premier plan après 10 min
+        private const val SYNC_INTERVAL = 5 * 60 * 1000L
 
         // `foreground` : lancé depuis l'arrière-plan (widget, bouton du casque) : le service doit passer au premier
         // plan aussitôt (Android l'exige dans les 5 s)
@@ -119,6 +125,7 @@ class PlayerService : Service() {
         registerReceiver(noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
         audio.registerAudioDeviceCallback(deviceCallback, main)
         main.post(updateCheck)
+        setupSync()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -132,6 +139,7 @@ class PlayerService : Service() {
         main.removeCallbacksAndMessages(null)
         try { unregisterReceiver(noisy) } catch (_: Exception) {}
         audio.unregisterAudioDeviceCallback(deviceCallback)
+        try { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
         wakeLock?.takeIf { it.isHeld }?.release()
         session.release()
         web.destroy()
@@ -315,6 +323,7 @@ class PlayerService : Service() {
                         }
                         "writeTags" -> writeTags(args.getString(0), args.getJSONObject(1))
                         "lookup" -> args.getJSONObject(1).let { Youtube.lookupForEditor(args.getString(0), it.optString("title"), it.optString("artist")) }
+                        "sync" -> Sync.action(args.getString(0), if (args.length() > 1 && !args.isNull(1)) args.getString(1) else null)
                         else -> throw IllegalArgumentException("méthode inconnue : $method")
                     }
                 } catch (e: Exception) {
@@ -344,11 +353,13 @@ class PlayerService : Service() {
     // Réglages dont le natif a besoin (thème du widget, fond de l'écran de l'app)
     var transparent = true
         private set
+    @Volatile private var folderSetting: String? = null
 
     private fun readSettingsForNative(json: String? = null) {
         try {
             val s = JSONObject(json ?: settingsFile.readText())
             transparent = s.optBoolean("transparent", true)
+            folderSetting = if (s.isNull("folder")) null else s.optString("folder").ifEmpty { null }
             val theme = s.optString("fxTheme", "glass")
             if (theme != state.theme) {
                 state.theme = theme
@@ -545,6 +556,51 @@ class PlayerService : Service() {
                 Updater.check(this@PlayerService)?.let { event("update-ready", JSONObject.quote(it)) }
             }
             main.postDelayed(this, Updater.CHECK_INTERVAL)
+        }
+    }
+
+    // ---------- Synchronisation avec l'ordinateur (Sync.kt) ----------
+
+    private fun setupSync() {
+        Sync.folderSetting = { folderSetting }
+        Sync.onState = { event("sync-state", it.toString()) }
+        // morceaux reçus : la liste du lecteur suit (et le dossier, s'il vient d'être créé)
+        Sync.onLibraryChanged = { folder ->
+            event("library-changed", JSONObject().put("folder", folder).put("tracks", Library.scan(folder)).toString())
+        }
+        // sans Wi‑Fi : le scanner de QR code de Google Play, ouvert sur l'écran de l'app
+        Sync.scanner = { done ->
+            main.post {
+                val shown = activity
+                if (shown == null) done(null, "ouvrez l'app")
+                else GmsBarcodeScanning.getClient(shown, GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
+                    .startScan()
+                    .addOnSuccessListener { done(it.rawValue ?: "", null) }
+                    .addOnCanceledListener { done(null, null) }
+                    .addOnFailureListener { done(null, it.message ?: it.toString()) }
+            }
+        }
+        getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
+        main.postDelayed(syncTick, 5000)
+    }
+
+    // Toutes les 5 minutes, au retour sur l'app et à chaque nouveau réseau, tant que le lecteur tourne
+    private val syncTick = object : Runnable {
+        override fun run() {
+            main.removeCallbacks(this)
+            if (Sync.paired && storageAccess()) HanabiApp.work.execute { Sync.syncAll() }
+            main.postDelayed(this, SYNC_INTERVAL)
+        }
+    }
+
+    fun syncSoon(delayMs: Long = 1500) {
+        main.removeCallbacks(syncTick)
+        main.postDelayed(syncTick, delayMs)
+    }
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            main.post { syncSoon(4000) }
         }
     }
 

@@ -5,6 +5,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { pathToFileURL } = require('url');
+const { createSync } = require('./sync');
 
 const WIN_WIDTH = 540;
 const WIN_HEIGHT = 88;
@@ -1233,6 +1234,7 @@ function updateTray() {
     { label: 'Effets', submenu: effectsMenu() },
     { label: 'Changer de dossier…', click: () => { showWindow(); send('choose-folder'); } },
     { label: 'Télécharger depuis YouTube…', click: () => { showWindow(); send('youtube'); } },
+    { label: 'Synchroniser avec le téléphone…', click: openSyncWindow },
     { type: 'separator' },
     { label: 'Quitter', click: () => app.quit() },
   ]);
@@ -1347,6 +1349,67 @@ ipcMain.handle('fx-panel-load', () => fxPanelState());
 ipcMain.on('fx-panel-set', (_e, partial) => setEffects(partial));
 ipcMain.on('fx-panel-close', () => fxPanel?.close());
 
+// ---------- Synchronisation avec le téléphone (sync.js) ----------
+
+const SYNC_WIDTH = 360;
+const SYNC_HEIGHT = 560;
+let sync = null;
+let syncWindow = null;
+
+function setupSync() {
+  let refresh = null;
+  sync = createSync({
+    dataDir: app.getPath('userData'),
+    folder: downloadFolder,
+    scan: scanFolder,
+    onChange: (state) => syncWindow?.webContents.send('sync-update', state),
+    // des morceaux sont arrivés du téléphone : la liste du lecteur se met à jour sans couper la lecture
+    onLibraryChanged: () => {
+      clearTimeout(refresh);
+      refresh = setTimeout(async () => {
+        if (settings.folder) send('library-changed', { folder: settings.folder, tracks: await scanFolder(settings.folder) });
+      }, 1000);
+    },
+  });
+}
+
+function openSyncWindow() {
+  if (syncWindow) {
+    syncWindow.show();
+    syncWindow.focus();
+    return;
+  }
+  syncWindow = new BrowserWindow({
+    ...besidePlayer(SYNC_WIDTH, SYNC_HEIGHT),
+    parent: win,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    backgroundMaterial: 'acrylic',
+    backgroundColor: '#00000000',
+    show: false,
+    icon: ICON_PATH,
+    title: 'Synchronisation',
+    webPreferences: {
+      preload: path.join(__dirname, 'sync-preload.js'),
+    },
+  });
+  syncWindow.loadFile(path.join(__dirname, 'renderer', 'sync.html'));
+  syncWindow.once('ready-to-show', () => syncWindow.show());
+  syncWindow.on('show', () => setTimeout(() => syncWindow && syncWindow.webContents.invalidate(), 50));
+  syncWindow.on('closed', () => {
+    syncWindow = null;
+    sync.windowClosed();
+  });
+}
+
+ipcMain.handle('sync-load', () => sync.state());
+ipcMain.handle('sync-action', (_e, name, arg) => sync.action(name, arg));
+ipcMain.handle('sync-qr', () => sync.qrCodes());
+ipcMain.on('sync-close', () => syncWindow?.close());
+
 // ---------- Mises à jour automatiques ----------
 
 // Les versions sont publiées dans les Releases du dépôt GitHub (public) par
@@ -1382,11 +1445,13 @@ if (!app.requestSingleInstanceLock()) {
     createTray();
     registerMediaKeys();
     setupAutoUpdate();
+    setupSync();
   });
 
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     cancelYoutube();
+    sync?.stop();
   });
 
   // Avant de quitter, on laisse l'interface enregistrer la position de lecture.

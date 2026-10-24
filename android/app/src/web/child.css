@@ -83,8 +83,8 @@ html.android-menu .sep {
 
 /* ---------- Réglages des effets, édition du morceau ---------- */
 
-html.android:is(.android-fx-panel, .android-editor),
-html.android:is(.android-fx-panel, .android-editor) body {
+html.android:is(.android-fx-panel, .android-editor, .android-sync),
+html.android:is(.android-fx-panel, .android-editor, .android-sync) body {
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -201,4 +201,49 @@ html.android-fx-panel input[type="range"]::-webkit-slider-thumb {
 
 html.android-fx-panel input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
+}
+
+/* synchronisation : textes et rangées à la taille du doigt */
+html.android-sync h2 {
+  font-size: 12px;
+}
+
+html.android-sync .intro,
+html.android-sync #pair {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+html.android-sync .device {
+  padding: 12px 14px;
+  border-radius: 14px;
+}
+
+html.android-sync .device .name {
+  font-size: 15.5px;
+}
+
+html.android-sync .device .detail,
+html.android-sync .empty {
+  font-size: 13px;
+}
+
+html.android-sync .link {
+  padding: 8px 14px;
+  font-size: 13.5px;
+}
+
+html.android-sync .peer {
+  height: 52px;
+  padding: 0 16px;
+  border-radius: 14px;
+  font-size: 15.5px;
+}
+
+html.android-sync .peer:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+html.android-sync .code {
+  font-size: 44px;
 }

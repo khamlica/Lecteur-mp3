@@ -38,8 +38,8 @@ class PlayerWidget : AppWidgetProvider() {
     }
 
     companion object {
-        // La barre du lecteur de bureau (540 × 88), et les contours des thèmes SAVAGE en pixels du bureau : taille de
-        // l'image du cadre et place de la barre dedans (SAVAGE : le cadre est la barre ; SAVAGE (Meshy) déborde, comme
+        // La barre du lecteur de bureau (540 × 88), et les contours SAVAGE en pixels du bureau : taille de
+        // l'image du cadre et place de la barre dedans (SAVAGE : le cadre est la barre ; SAVAGE ENHANCED (savage-meshy) déborde, comme
         // FRAME_SKINS dans main.js). Le cadre garde ses proportions : seuls ses rails droits s'allongent.
         private const val BAR_WIDTH = 540f
         private const val BAR_HEIGHT = 88f
@@ -98,8 +98,10 @@ class PlayerWidget : AppWidgetProvider() {
             val width = (w * scale).roundToInt(); val height = (h * scale).roundToInt()
 
             val theme = state?.theme ?: "glass"
-            val skin = SKINS[theme]
-            val image = skin?.let { frameImages.getOrPut(theme) { frameImage(context, theme, it) } }
+            // le contour (SAVAGE…) se pose par-dessus le thème, quel qu'il soit
+            val frameName = state?.frame ?: "none"
+            val skin = SKINS[frameName]
+            val image = skin?.let { frameImages.getOrPut(frameName) { frameImage(context, frameName, it) } }
             // Place du cadre et de la barre, en dp : le cadre à la hauteur du widget, ses rails allongés s'il est plus
             // large ; réduit d'un bloc et centré s'il est plus étroit
             val bar = RectF(0f, 0f, w, h)
@@ -117,12 +119,12 @@ class PlayerWidget : AppWidgetProvider() {
 
             // le verre et le cadre ne changent qu'avec le morceau, le thème ou la taille : redessinés seulement alors
             val px = { r: RectF -> RectF(r.left * scale, r.top * scale, r.right * scale, r.bottom * scale) }
-            val key = listOf(theme, width, height, state?.coverPath, state?.cover?.generationId, state?.color).joinToString("|")
+            val key = listOf(theme, frameName, width, height, state?.coverPath, state?.cover?.generationId, state?.color).joinToString("|")
             val background = glassCache[id]?.takeIf { it.first == key }?.second
                 ?: glass(context, width, height, px(bar), state, theme, skin != null, scale).also { glassCache[id] = key to it }
             views.setImageViewBitmap(R.id.background, background)
             if (image != null) {
-                val frameKey = "$theme|$width|$height"
+                val frameKey = "$frameName|$width|$height"
                 val frame = frameCache[id]?.takeIf { it.first == frameKey }?.second
                     ?: frameBitmap(image, width, height, px(frameRect)).also { frameCache[id] = frameKey to it }
                 views.setImageViewBitmap(R.id.frame, frame)
@@ -230,7 +232,7 @@ class PlayerWidget : AppWidgetProvider() {
             return out
         }
 
-        // Le cadre de chrome des thèmes SAVAGE (le même rendu que dans le lecteur, skins/<thème>-frame.png), et ses rails :
+        // Le cadre de chrome des contours SAVAGE (le même rendu que dans le lecteur, skins/<contour>-frame.png), et ses rails :
         // au-dessus et au-dessous de la barre, dans chaque moitié, la plus longue suite de colonnes où le chrome est le
         // plus mince (un fil en haut, un en bas ; la marge tient compte du relief du chrome texturé). Les pointes qui
         // dépassent sur les côtés ne comptent pas.

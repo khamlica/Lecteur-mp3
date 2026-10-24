@@ -33,7 +33,8 @@ const DEFAULTS = {
   fxNotesLevel: 1,
   fxSyncMs: 0,             // avance (+) ou retard (−) des effets sur le son, réglée à l'oreille
   fxSyncByDevice: {},      // la même, retenue pour chaque sortie audio (un casque Bluetooth a son propre retard)
-  fxTheme: 'glass',        // 'glass' | 'savage' | 'savage-meshy' | 'aurora' | 'neon' | 'ember' | 'mono' (voir FX_THEMES)
+  fxTheme: 'glass',        // 'glass' | 'aurora' | 'neon' | 'ember' | 'mono' (voir FX_THEMES)
+  fxFrame: 'none',         // contour posé par-dessus le thème : 'none' | 'savage' | 'savage-meshy' (voir FX_FRAMES)
   fxColorMode: 'theme',    // 'theme' | 'cover' | 'custom'
   fxCustomColor: '#ff7a3d',
   soundFx: 'none',         // effet sonore à l'écoute (voir SOUND_EFFECTS)
@@ -76,6 +77,11 @@ function loadSettings() {
       settings.fxPulseLevel = settings.fxPressureLevel = settings.fxHaloLevel = settings.fxNotesLevel = level;
     }
     delete settings.fxIntensity;
+    // Les contours SAVAGE étaient des thèmes (jusqu'à la 1.4) : ils se posent maintenant sur le Verre liquide
+    if (FX_FRAMES.some(([name]) => name === saved.fxTheme)) {
+      settings.fxFrame = saved.fxTheme;
+      settings.fxTheme = 'glass';
+    }
   } catch {
     settings = { ...DEFAULTS };
   }
@@ -779,7 +785,7 @@ function createWindow() {
     settings.bounds = { x, y };
     saveSettings();
   });
-  win.on('move', () => frameWin && !frameWin.isDestroyed() && frameWin.setBounds(frameBounds(frameSkin || settings.fxTheme)));
+  win.on('move', () => frameWin && !frameWin.isDestroyed() && frameWin.setBounds(frameBounds(frameSkin || settings.fxFrame)));
 
   // ✕ ou Alt+F4 : on cache au lieu de quitter
   win.on('close', (e) => {
@@ -827,7 +833,7 @@ function startHoverWatcher() {
 
 // ---------- Fenêtre-cadre (contour qui déborde du lecteur) ----------
 
-// Une personnalisation dont le contour déborde du lecteur (SAVAGE (Meshy) : le cadre du modèle 3D, ses épines
+// Un contour qui déborde du lecteur (SAVAGE ENHANCED : le cadre du modèle 3D, ses épines
 // vers l'extérieur) : il est posé dans une fenêtre transparente plus grande, au-dessus du lecteur, qui laisse
 // passer les clics et le suit (déplacement, masquage, fondu). `left`, `top` : position du lecteur dans
 // l'image du cadre (renderer/skins/<nom>-frame.png, 3×), `width`, `height` : taille du cadre (px).
@@ -843,7 +849,7 @@ function frameBounds(skin) {
 }
 
 function updateFrameWindow() {
-  const skin = FRAME_SKINS[settings.fxTheme] ? settings.fxTheme : null;
+  const skin = FRAME_SKINS[settings.fxFrame] ? settings.fxFrame : null;
   const wanted = skin && win && !win.isDestroyed() && win.isVisible();
   if (!wanted) {
     if (frameWin && !frameWin.isDestroyed()) frameWin.hide();
@@ -925,8 +931,9 @@ function send(cmd, arg) {
 
 // ---------- Effets d'ambiance ----------
 
-// Mêmes noms que FX_THEMES dans renderer/effects.js
-const FX_THEMES = [['glass', 'Verre liquide'], ['savage', 'SAVAGE'], ['savage-meshy', 'SAVAGE (Meshy)'], ['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
+// Mêmes noms que FX_THEMES et FX_FRAMES dans renderer/effects.js
+const FX_THEMES = [['glass', 'Verre liquide'], ['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
+const FX_FRAMES = [['none', 'Aucun'], ['savage', 'SAVAGE'], ['savage-meshy', 'SAVAGE ENHANCED']];
 
 // Réglages modifiables depuis la fenêtre de personnalisation, avec leurs valeurs admises
 const FX_SETTINGS = {
@@ -940,6 +947,7 @@ const FX_SETTINGS = {
   fxPressureLevel: (v) => typeof v === 'number' && v >= 0 && v <= 1.5,
   fxHaloLevel: (v) => typeof v === 'number' && v >= 0 && v <= 1.5,
   fxTheme: (v) => FX_THEMES.some(([name]) => name === v),
+  fxFrame: (v) => FX_FRAMES.some(([name]) => name === v),
   fxColorMode: (v) => ['theme', 'cover', 'custom'].includes(v),
   fxCustomColor: (v) => /^#[0-9a-f]{6}$/i.test(v),
 };
@@ -953,6 +961,7 @@ function fxConfig() {
     levels: { pulse: settings.fxPulseLevel, pressure: settings.fxPressureLevel, halo: settings.fxHaloLevel, notes: settings.fxNotesLevel },
     syncMs: settings.fxSyncMs,
     theme: settings.fxTheme,
+    frame: settings.fxFrame,
     colorMode: settings.fxColorMode,
     customColor: settings.fxCustomColor,
   };
@@ -973,7 +982,7 @@ function setEffects(partial) {
 // ---------- Fenêtre « Personnaliser les effets » ----------
 
 const FX_PANEL_WIDTH = 360;
-const FX_PANEL_HEIGHT = 840; // cinq thèmes (trois rangées), descriptions des effets sur deux lignes, boutons du bas compris
+const FX_PANEL_HEIGHT = 940; // cinq thèmes (trois rangées), trois contours (deux), descriptions des effets sur deux lignes, boutons du bas compris
 let fxPanel = null;
 
 function openFxPanel() {
@@ -1165,6 +1174,13 @@ function effectsMenu() {
       checked: settings.fxTheme === value,
       click: () => setEffects({ fxTheme: value }),
     })),
+    // le contour se pose par-dessus le thème choisi
+    { label: 'Contour', submenu: FX_FRAMES.map(([value, label]) => ({
+      label,
+      type: 'radio',
+      checked: settings.fxFrame === value,
+      click: () => setEffects({ fxFrame: value }),
+    })) },
     { type: 'separator' },
     { label: 'Rythme', type: 'checkbox', checked: settings.fxPulse, click: (item) => setEffects({ fxPulse: item.checked }) },
     { label: 'Basse', type: 'checkbox', checked: settings.fxPressure, click: (item) => setEffects({ fxPressure: item.checked }) },

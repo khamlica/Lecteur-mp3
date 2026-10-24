@@ -1566,17 +1566,28 @@ function trackProfile(frames, dt) {
 // `colors` : couleurs propres au thème, pour un son sombre puis brillant ;
 // null pour Aurore, qui prend celles de la pochette.
 
-// `base` : thème dont celui-ci reprend tous les effets (personnalisation : seul le contour change, voir
-// fx-themes.css, data-fx-base et .fx-frame)
+// `base` : thème dont celui-ci reprend tous les effets (voir fx-themes.css, data-fx-base)
 const FX_THEMES = {
   glass: { label: 'Verre liquide', colors: null },
-  savage: { label: 'SAVAGE', colors: null, base: 'glass' },
-  'savage-meshy': { label: 'SAVAGE (Meshy)', colors: null, base: 'glass', overflow: true }, // cadre hors du lecteur (main.js)
   aurora: { label: 'Aurore', colors: null },
   neon: { label: 'Néon', colors: [[0, 229, 255], [255, 43, 214]] },
   ember: { label: 'Braise', colors: [[196, 42, 18], [255, 176, 64]] },
   mono: { label: 'Monochrome', colors: [[255, 255, 255], [255, 255, 255]], colorless: true },
 };
+
+// Contours : un cadre posé par-dessus le thème, quel qu'il soit (élément .fx-frame, data-fx-frame ; voir
+// fx-themes.css). `overflow` : il déborde du lecteur, dans une fenêtre-cadre à part (main.js, frame.html).
+const FX_FRAMES = {
+  none: { label: 'Aucun' },
+  savage: { label: 'SAVAGE' },
+  // (le cadre du modèle 3D de Meshy : l'identifiant reste celui de ses images, skins/savage-meshy-*.png)
+  'savage-meshy': { label: 'SAVAGE ENHANCED', overflow: true },
+};
+
+// Les contours étaient des thèmes (jusqu'à la 1.4) : un ancien réglage « savage » devient le Verre liquide avec
+// ce contour
+const fxSplitTheme = ({ theme, frame }) =>
+  (FX_FRAMES[theme] && theme !== 'none' ? { theme: 'glass', frame: theme } : { theme, frame: FX_FRAMES[frame] ? frame : 'none' });
 
 const fxMix = (a, b, t) => a.map((c, i) => Math.round(c + (b[i] - c) * t));
 const fxBase = (name) => FX_THEMES[name]?.base || name;
@@ -1640,8 +1651,9 @@ function fxPalette(themeName, base, brightness) {
 
 // Pose les valeurs d'effets sur un élément .fx-surface (lecteur ou aperçu).
 // `v` : { pulse, pressure, glow, noteLeft, noteRight, voicePresence, brightness… } déjà dosés ;
-// `base` : voir fxBaseColor.
-function applyFx(el, themeName, base, v, now) {
+// `base` : voir fxBaseColor ; `frameName` : le contour posé par-dessus (FX_FRAMES).
+function applyFx(el, themeName, base, v, now, frameName = 'none') {
+  el.dataset.fxFrame = FX_FRAMES[frameName] ? frameName : 'none';
   const p = fxPalette(themeName, base, v.brightness);
   // Tons chauds de la pochette, rendus lumineux (blanc en Monochrome) : basse tenue, passages rêveurs
   const warm = FX_THEMES[themeName]?.colorless ? [255, 255, 255] : fxShift(v.warm || FX_WARM_FALLBACK, 0, 0.85, 0.62);
@@ -1799,7 +1811,7 @@ async function fxStemChannels(tracks) {
 function createAmbiance(audio, bar, readFile, sound, stems = null) {
   let config = {
     pulse: false, pressure: false, halo: false, notes: false,
-    theme: 'glass', colorMode: 'theme', customColor: '#ff7a3d',
+    theme: 'glass', frame: 'none', colorMode: 'theme', customColor: '#ff7a3d',
     levels: { pulse: 1, pressure: 1, halo: 1, notes: 1 }, // intensité de chaque effet, de 0 à 1,5
     source: 'mix', // 'mix' : effets du morceau entier ; 'stems' : ceux des pistes séparées, si le morceau l'a été (separateNow)
     syncMs: 0, // avance (+) ou retard (−) des effets sur le son, réglée à l'oreille
@@ -2079,9 +2091,9 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     }
     v.warm = warm;
     v.coverColor = color;
-    applyFx(bar, config.theme, fxBaseColor(config, color), v, performance.now() / 1000);
+    applyFx(bar, config.theme, fxBaseColor(config, color), v, performance.now() / 1000, config.frame);
     // contour hors du lecteur (fenêtre-cadre) : son reflet suit celui du lecteur
-    if (FX_THEMES[config.theme]?.overflow && onFrameFx) {
+    if (FX_FRAMES[config.frame]?.overflow && onFrameFx) {
       const cs = bar.style;
       onFrameFx({ rim: cs.getPropertyValue('--fx-rim'), angle: (v.rimAngle || 0).toFixed(1), glint: cs.getPropertyValue('--fx-glint') });
     }
@@ -2112,6 +2124,9 @@ function createAmbiance(audio, bar, readFile, sound, stems = null) {
     setConfig(next) {
       const sourceChanged = next.source && next.source !== config.source;
       config = { ...config, ...next };
+      Object.assign(config, fxSplitTheme(config));
+      // en pause, rien ne redessine le lecteur : le thème ou le contour choisi s'y voit tout de suite
+      if (!frame) render(0);
       if (sourceChanged) {
         settle(); // les effets lents passent d'une analyse à l'autre en douceur
         if (profiles.get(track)?.timeline) { applyStems(track); requestStems(track); }

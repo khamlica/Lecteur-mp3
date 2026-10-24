@@ -23,6 +23,8 @@ object Updater {
 
     @Volatile var ready: String? = null // version téléchargée, prête à installer
         private set
+    @Volatile var failed = false // la dernière vérification n'a pas abouti (pas de connexion…)
+        private set
 
     private fun apk(context: Context) = File(context.cacheDir, "updates/Hanabi-Player.apk")
 
@@ -38,10 +40,14 @@ object Updater {
 
     // → la version prête à installer, ou null
     fun check(context: Context): String? {
+        failed = false
         if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) return null
         try {
             val res = Http.get(LATEST, 10000, mapOf("Accept" to "application/vnd.github+json"))
-            if (!res.ok) return null
+            if (!res.ok) {
+                failed = true
+                return null
+            }
             val release = JSONObject(res.text)
             val version = release.getString("tag_name").removePrefix("v")
             if (!newer(version, BuildConfigInfo.version(context))) return null
@@ -54,11 +60,14 @@ object Updater {
                 Http.download(asset.getString("browser_download_url"), emptyMap(), dest)
                 marker.writeText(version)
             }
+            // une seule notification par version : la vérification revient à chaque retour sur l'app
+            val fresh = ready != version
             ready = version
-            notifyReady(context, version)
+            if (fresh) notifyReady(context, version)
             return version
         } catch (e: Exception) {
             Log.w(TAG, "Mise à jour impossible : ${e.message}")
+            failed = true
             return null
         }
     }

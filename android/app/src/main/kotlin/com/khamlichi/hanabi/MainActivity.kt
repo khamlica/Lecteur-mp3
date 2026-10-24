@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         service?.event("resume")
         service?.syncSoon()
+        service?.checkUpdates()
     }
 
     override fun onDestroy() {

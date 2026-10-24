@@ -10,37 +10,43 @@ const EFFECT_KEYS = {
 const DEFAULTS = {
   fxPulse: true, fxPressure: true, fxHalo: true, fxNotes: true,
   fxPulseLevel: 1, fxPressureLevel: 1, fxHaloLevel: 1, fxNotesLevel: 1,
-  fxTheme: 'glass', fxColorMode: 'theme', fxCustomColor: '#ff7a3d', fxSyncMs: 0,
+  fxTheme: 'glass', fxFrame: 'none', fxColorMode: 'theme', fxCustomColor: '#ff7a3d', fxSyncMs: 0,
 };
 
 let config = null;      // réglages en cours (même forme que pour le lecteur)
-let hovered = null;     // thème survolé : seul lui et le thème choisi s'animent
+let hovered = null;     // carte survolée : seules elle et les cartes choisies s'animent
 let focusedEffect = null; // effet dont on règle l'intensité : on ne montre que lui
 let coverColor = null;  // couleur de la pochette du morceau en cours
-const previews = {};    // thème → élément d'aperçu
+// cartes d'aperçu : { kind: 'theme' | 'frame', name, el } — un thème s'y montre avec le contour choisi, un contour
+// avec le thème choisi : chaque carte montre ce qu'on aurait en la choisissant
+const previews = [];
 
 // ---------- Construction ----------
 
-for (const [name, theme] of Object.entries(FX_THEMES)) {
+function addCard(kind, name, label, parent) {
   const card = document.createElement('button');
   card.className = 'theme';
-  card.dataset.theme = name;
+  card.dataset.kind = kind;
+  card.dataset.name = name;
   card.innerHTML = `
-    <div class="preview fx-surface" data-fx-theme="${name}">
+    <div class="preview fx-surface">
       <div class="fx-palette"></div><div class="fx-bass"></div>
       <div class="fx-lift"></div><div class="fx-sparkles"></div><div class="fx-frame"></div>
-      
+
       <div class="mini-cover fx-cover"></div>
       <div class="lines"><i></i><i></i></div>
     </div>
     <span></span>`;
-  card.querySelector('span').textContent = theme.label;
-  card.addEventListener('click', () => fxPanel.set({ fxTheme: name }));
-  card.addEventListener('pointerenter', () => { hovered = name; });
-  card.addEventListener('pointerleave', () => { if (hovered === name) hovered = null; });
-  $('themes').append(card);
-  previews[name] = card.querySelector('.preview');
+  card.querySelector('span').textContent = label;
+  card.addEventListener('click', () => fxPanel.set(kind === 'theme' ? { fxTheme: name } : { fxFrame: name }));
+  card.addEventListener('pointerenter', () => { hovered = card; });
+  card.addEventListener('pointerleave', () => { if (hovered === card) hovered = null; });
+  parent.append(card);
+  previews.push({ kind, name, card, el: card.querySelector('.preview') });
 }
+
+for (const [name, theme] of Object.entries(FX_THEMES)) addCard('theme', name, theme.label, $('themes'));
+for (const [name, frame] of Object.entries(FX_FRAMES)) addCard('frame', name, frame.label, $('frames'));
 
 // ---------- Affichage des réglages ----------
 
@@ -52,7 +58,7 @@ function setRange(input, value) {
 const syncLabel = (ms) => (ms == 0 ? 'calé' : ms > 0 ? `avance ${ms} ms` : `retard ${-ms} ms`);
 
 function render() {
-  document.querySelectorAll('.theme').forEach((card) => card.classList.toggle('selected', card.dataset.theme === config.theme));
+  for (const p of previews) p.card.classList.toggle('selected', p.name === (p.kind === 'theme' ? config.theme : config.frame));
 
   const theme = FX_THEMES[config.theme] || FX_THEMES.aurora;
   $('color-section').classList.toggle('disabled', !!theme.colorless);
@@ -174,17 +180,19 @@ function animate(ms) {
   const dt = Math.min(0.1, t - lastFrame || FX_STEP);
   lastFrame = t;
   const shown = focusedEffect ? { ...config, pulse: false, pressure: false, halo: false, notes: false, [focusedEffect]: config[focusedEffect] } : config;
-  for (const [name, el] of Object.entries(previews)) {
-    const live = name === config.theme || name === hovered;
-    const v = fxDose(live ? demo(t) : STILL, shown);
+  for (const p of previews) {
+    const theme = p.kind === 'theme' ? p.name : config.theme;
+    const frame = p.kind === 'frame' ? p.name : config.frame;
+    const live = p.card.classList.contains('selected') || p.card === hovered;
+    const v = fxDose(live ? demo(t) : STILL, { ...shown, theme });
     if (reducedMotion.matches) {
-      const f = (faded[name] ??= { pulse: 0, pulseHigh: 0 });
+      const f = (faded[`${p.kind}:${p.name}`] ??= { pulse: 0, pulseHigh: 0 });
       v.pulse = f.pulse = follow(f.pulse, v.pulse, dt, 0.06, 0.2);
     }
-    v.rimAngle = (t * 20) % 360; // Verre liquide : le reflet fait lentement le tour du bord
+    v.rimAngle = (t * 20) % 360; // le reflet fait lentement le tour du bord (Verre liquide, contours)
     v.warm = fxWarmFrom(coverColor);
     v.coverColor = coverColor || FX_FALLBACK_COLOR;
-    applyFx(el, name, fxBaseColor({ ...config, theme: name }, coverColor || FX_FALLBACK_COLOR), v, t);
+    applyFx(p.el, theme, fxBaseColor({ ...config, theme }, coverColor || FX_FALLBACK_COLOR), v, t, frame);
   }
 }
 

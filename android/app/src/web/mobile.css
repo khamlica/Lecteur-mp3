@@ -546,7 +546,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 
 /* SAVAGE : le cadre de chrome est dessiné pour la barre du bureau (540 × 88) ; étiré sur l'écran entier il
    serait déformé. Dans l'app, la base Verre liquide et son bord ; le cadre habille le widget (PlayerWidget). */
-.fx-surface:is([data-fx-theme="savage"], [data-fx-theme="savage-meshy"]):not(.preview) .fx-frame {
+.fx-surface:is([data-fx-frame="savage"], [data-fx-frame="savage-meshy"]):not(.preview) .fx-frame {
   display: none;
 }
 

@@ -362,7 +362,7 @@
   filter: none;
 }
 
-/* ---------- Personnalisations : la base Verre liquide, un autre contour (élément .fx-frame) ---------- */
+/* ---------- Contours : un cadre posé par-dessus le thème, quel qu'il soit (élément .fx-frame, data-fx-frame) ---------- */
 
 .fx-frame {
   position: absolute;
@@ -376,26 +376,27 @@
 /* SAVAGE (aespa) : un cadre de chrome liquide en relief, jonc et épines tribales, la pochette sertie au
    milieu de ses griffes. Le cadre est un rendu (skins/savage-frame.png, 3×, rendu par tools/savage/chrome.py) ; un reflet en fait le tour, découpé à sa forme exacte (savage-mask.png), et
    s'illumine sur les coups de basse (--fx-rim) ; le chrome lui-même s'éclaire un peu avec eux.
-   SAVAGE (Meshy) : le cadre du modèle 3D texturé de Meshy, nettoyé et simplifié (tools/savage-meshy) ; il
+   SAVAGE ENHANCED (savage-meshy) : le cadre du modèle 3D texturé de Meshy, nettoyé et simplifié (tools/savage-meshy) ; il
    déborde du lecteur exprès, ses épines vers l'extérieur : il est dans une fenêtre-cadre à part (frame.html),
-   le lecteur n'en garde ici que l'aperçu de la fenêtre de personnalisation. */
-.fx-surface[data-fx-theme="savage"] {
+   le lecteur n'en garde ici que l'aperçu de la fenêtre de personnalisation. Son reflet prend la couleur des
+   effets du thème (--fx-glint). */
+.fx-surface[data-fx-frame="savage"] {
   --fx-frame-img: url('skins/savage-frame.png');
   --fx-frame-mask: url('skins/savage-mask.png');
 }
 
-.fx-surface[data-fx-theme="savage-meshy"] {
+.fx-surface[data-fx-frame="savage-meshy"] {
   --fx-frame-img: url('skins/savage-meshy-frame.png');
   --fx-frame-mask: url('skins/savage-meshy-mask.png');
 }
 
-.fx-surface:is([data-fx-theme="savage"], .preview[data-fx-theme="savage-meshy"]) .fx-frame {
+.fx-surface:is([data-fx-frame="savage"], .preview[data-fx-frame="savage-meshy"]) .fx-frame {
   display: block;
   background: var(--fx-frame-img) 0 0 / 100% 100% no-repeat;
   filter: brightness(calc(0.94 + 0.2 * var(--fx-rim, 0)));
 }
 
-.fx-surface:is([data-fx-theme="savage"], [data-fx-theme="savage-meshy"]) .fx-frame::after {
+.fx-surface:is([data-fx-frame="savage"], [data-fx-frame="savage-meshy"]) .fx-frame::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -410,7 +411,7 @@
 }
 
 /* le liseré de verre laisse la place au chrome */
-.fx-surface:is([data-fx-theme="savage"], [data-fx-theme="savage-meshy"])::after {
+.fx-surface:is([data-fx-frame="savage"], [data-fx-frame="savage-meshy"])::after {
   display: none;
 }
 

@@ -67,6 +67,7 @@ class PlayerService : Service() {
         private const val WIDGET_TICK = 2000L
         private const val PAUSED_FOREGROUND = 10 * 60 * 1000L // en pause, le lecteur quitte le premier plan après 10 min
         private const val SYNC_INTERVAL = 5 * 60 * 1000L
+        private const val UPDATE_RECHECK = 15 * 60 * 1000L
 
         // `foreground` : lancé depuis l'arrière-plan (widget, bouton du casque) : le service doit passer au premier
         // plan aussitôt (Android l'exige dans les 5 s)
@@ -89,6 +90,7 @@ class PlayerService : Service() {
         var rate = 1.0
         var color: Int? = null // couleur des effets (dominante de la pochette)
         var theme = "glass"
+        var frame = "none" // contour posé par-dessus le thème (le cadre du widget)
         var cover: Bitmap? = null
         var coverPath: String? = null
         var updatedAt = 0L
@@ -306,6 +308,11 @@ class PlayerService : Service() {
         fun version(): String = BuildConfigInfo.version(this@PlayerService)
 
         @JavascriptInterface
+        fun checkUpdate() {
+            main.post { checkUpdates(manual = true) }
+        }
+
+        @JavascriptInterface
         fun musicFolder(): String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).absolutePath
 
         // Travaux longs : le résultat revient à la page par hanabiHost._done(id, résultat)
@@ -361,9 +368,13 @@ class PlayerService : Service() {
             val s = JSONObject(json ?: settingsFile.readText())
             transparent = s.optBoolean("transparent", true)
             folderSetting = if (s.isNull("folder")) null else s.optString("folder").ifEmpty { null }
-            val theme = s.optString("fxTheme", "glass")
-            if (theme != state.theme) {
+            var theme = s.optString("fxTheme", "glass")
+            var frame = s.optString("fxFrame", "none")
+            // les contours SAVAGE étaient des thèmes (jusqu'à la 1.4), voir host.js
+            if (theme == "savage" || theme == "savage-meshy") { frame = theme; theme = "glass" }
+            if (theme != state.theme || frame != state.frame) {
                 state.theme = theme
+                state.frame = frame
                 main.post { PlayerWidget.updateAll(this) }
             }
         } catch (_: Exception) {
@@ -398,6 +409,7 @@ class PlayerService : Service() {
         if (info.has("duration")) state.duration = info.optDouble("duration", 0.0).takeIf { it.isFinite() } ?: 0.0
         if (info.has("rate")) state.rate = info.getDouble("rate")
         if (info.has("theme")) state.theme = info.getString("theme")
+        if (info.has("frame")) state.frame = info.getString("frame")
         info.optJSONArray("color")?.let { state.color = Color.rgb(it.getInt(0), it.getInt(1), it.getInt(2)) }
         state.updatedAt = android.os.SystemClock.elapsedRealtime()
 
@@ -551,12 +563,32 @@ class PlayerService : Service() {
 
     // ---------- Mises à jour ----------
 
+    // Au démarrage du lecteur, toutes les 6 h, et à chaque retour sur l'app (au plus tous les quarts d'heure) : le
+    // lecteur vit en arrière-plan et ne redémarre pas quand on rouvre l'app, une version publiée entre-temps
+    // attendrait sinon jusqu'à 6 h
+    private var lastUpdateCheck = 0L
     private val updateCheck = object : Runnable {
         override fun run() {
-            HanabiApp.work.execute {
-                Updater.check(this@PlayerService)?.let { event("update-ready", JSONObject.quote(it)) }
-            }
+            checkUpdates()
             main.postDelayed(this, Updater.CHECK_INTERVAL)
+        }
+    }
+
+    // `manual` : demandé depuis le menu ✨, la réponse s'affiche (à jour, mise à jour prête, ou vérification impossible)
+    fun checkUpdates(manual: Boolean = false) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!manual && lastUpdateCheck != 0L && now - lastUpdateCheck < UPDATE_RECHECK) return
+        lastUpdateCheck = now
+        HanabiApp.work.execute {
+            val ready = Updater.check(this)
+            ready?.let { event("update-ready", JSONObject.quote(it)) }
+            if (!manual) return@execute
+            val text = when {
+                ready != null -> "Version $ready prête : « Installer la version $ready » dans le menu ✨"
+                Updater.failed -> "Impossible de vérifier les mises à jour (pas de connexion ?)"
+                else -> "Hanabi Player est à jour (version ${BuildConfigInfo.version(this)})"
+            }
+            main.post { android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show() }
         }
     }
 

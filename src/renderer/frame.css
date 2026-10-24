@@ -1,4 +1,4 @@
-/* Fenêtre-cadre : un contour qui déborde du lecteur (personnalisation SAVAGE (Meshy)), posé par-dessus lui
+/* Fenêtre-cadre : un contour qui déborde du lecteur (contour SAVAGE ENHANCED), posé par-dessus lui
    dans une fenêtre transparente qui laisse passer les clics (voir updateFrameWindow dans main.js). Un reflet
    en fait le tour, découpé à sa forme exacte, et s'illumine sur les coups de basse, comme dans le lecteur
    (--fx-rim, --fx-rim-angle, --fx-glint : envoyés par le lecteur à chaque image). */

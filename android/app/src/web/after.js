@@ -21,6 +21,7 @@
         duration: isFinite(audio.duration) ? audio.duration : 0,
         rate: audio.playbackRate || 1,
         theme: host.settings().fxTheme,
+        frame: host.settings().fxFrame,
         color: host.playback().fxColor || null,
       }));
     }, 60);

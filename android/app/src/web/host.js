@@ -25,6 +25,7 @@
     fxSyncMs: 0,
     fxSyncByDevice: {},
     fxTheme: 'glass',
+    fxFrame: 'none',
     fxColorMode: 'theme',
     fxCustomColor: '#ff7a3d',
     soundFx: 'none',
@@ -35,6 +36,11 @@
     settings = { ...DEFAULTS, ...JSON.parse(N.loadSettings() || '{}') };
   } catch {
     settings = { ...DEFAULTS };
+  }
+  // Les contours SAVAGE étaient des thèmes (jusqu'à la 1.4) : ils se posent maintenant sur le Verre liquide
+  if (settings.fxTheme === 'savage' || settings.fxTheme === 'savage-meshy') {
+    settings.fxFrame = settings.fxTheme;
+    settings.fxTheme = 'glass';
   }
 
   let saveTimer = null;
@@ -73,8 +79,9 @@
 
   // ---------- Effets d'ambiance (comme dans main.js) ----------
 
-  // Mêmes noms que FX_THEMES dans effects.js
-  const FX_THEMES = [['glass', 'Verre liquide'], ['savage', 'SAVAGE'], ['savage-meshy', 'SAVAGE (Meshy)'], ['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
+  // Mêmes noms que FX_THEMES et FX_FRAMES dans effects.js
+  const FX_THEMES = [['glass', 'Verre liquide'], ['aurora', 'Aurore'], ['neon', 'Néon'], ['ember', 'Braise'], ['mono', 'Monochrome']];
+  const FX_FRAMES = [['none', 'Aucun'], ['savage', 'SAVAGE'], ['savage-meshy', 'SAVAGE ENHANCED']];
 
   const FX_SETTINGS = {
     fxPulse: (v) => typeof v === 'boolean',
@@ -87,6 +94,7 @@
     fxPressureLevel: (v) => typeof v === 'number' && v >= 0 && v <= 1.5,
     fxHaloLevel: (v) => typeof v === 'number' && v >= 0 && v <= 1.5,
     fxTheme: (v) => FX_THEMES.some(([name]) => name === v),
+    fxFrame: (v) => FX_FRAMES.some(([name]) => name === v),
     fxColorMode: (v) => ['theme', 'cover', 'custom'].includes(v),
     fxCustomColor: (v) => /^#[0-9a-f]{6}$/i.test(v),
   };
@@ -100,6 +108,7 @@
       levels: { pulse: settings.fxPulseLevel, pressure: settings.fxPressureLevel, halo: settings.fxHaloLevel, notes: settings.fxNotesLevel },
       syncMs: settings.fxSyncMs,
       theme: settings.fxTheme,
+      frame: settings.fxFrame,
       colorMode: settings.fxColorMode,
       customColor: settings.fxCustomColor,
     };
@@ -176,6 +185,13 @@
         checked: settings.fxTheme === value,
         click: () => setEffects({ fxTheme: value }),
       })),
+      // le contour se pose par-dessus le thème choisi (dans l'app, il habille le widget, voir mobile.css)
+      { label: 'Contour', submenu: FX_FRAMES.map(([value, label]) => ({
+        label,
+        type: 'radio',
+        checked: settings.fxFrame === value,
+        click: () => setEffects({ fxFrame: value }),
+      })) },
       { type: 'separator' },
       { label: 'Rythme', type: 'checkbox', checked: settings.fxPulse, click: (item) => setEffects({ fxPulse: item.checked }) },
       { label: 'Basse', type: 'checkbox', checked: settings.fxPressure, click: (item) => setEffects({ fxPressure: item.checked }) },
@@ -186,6 +202,8 @@
       { label: 'Personnaliser les effets…', click: openFxPanel },
       { type: 'separator' },
       { label: 'Synchroniser avec l\'ordinateur…', click: openSync },
+      // la réponse s'affiche en bas de l'écran (PlayerService.checkUpdates)
+      ...(updateReady ? [] : [{ label: `Rechercher une mise à jour (version ${N.version()})`, click: () => N.checkUpdate() }]),
     ];
   }
 
